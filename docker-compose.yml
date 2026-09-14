@@ -1,0 +1,37 @@
+services:
+  snapcast:
+    build:
+      context: .
+      dockerfile: unified/Dockerfile
+    image: snapcast-all-in-one:local
+    container_name: snapcast
+    hostname: snapcast-gateway
+    user: "0:0"
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Shanghai
+    volumes:
+      - /vol1/1000/tools/snapcast/config:/app/config
+      - /vol1/1000/tools/snapcast/data:/app/data
+      - /vol1/1000/tools/snapcast/certs:/app/certs
+      - /vol1/1000:/media:ro
+    networks:
+      audio_lan:
+        interface_name: eth0
+        ipv4_address: 192.168.2.125
+    healthcheck:
+      test: ["CMD", "/bin/sh", "/app/unified/healthcheck.sh"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+networks:
+  audio_lan:
+    driver: macvlan
+    driver_opts:
+      parent: eno2-ovs
+    ipam:
+      config:
+        - subnet: 192.168.2.0/24
+          gateway: 192.168.2.8

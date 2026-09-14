@@ -1,0 +1,29 @@
+# Local diagnostics and agent artifacts
+.playwright-cli/
+output/
+.learnings/
+
+# Python cache and test artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Runtime state (bind-mounted on FNOS)
+config/
+data/
+certs/
+backups/
+*.pid
+*.log
+
+# Local environment and editor files
+.env
+.env.*
+!.env.example
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*~
