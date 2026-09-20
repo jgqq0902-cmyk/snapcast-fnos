@@ -2,7 +2,7 @@
 """LAN-only Snapcast console and persistent MPD player API."""
 from __future__ import annotations
 
-import base64, binascii, hashlib, hmac, itertools, json, mimetypes, os, secrets, socket, threading, time
+import base64, binascii, hashlib, hmac, itertools, json, mimetypes, os, secrets, socket, subprocess, threading, time
 import re
 from collections import defaultdict, deque
 from http.cookies import SimpleCookie
@@ -26,6 +26,7 @@ LIBRARY_LINK = Path(os.environ.get("LIBRARY_LINK", "/app/data/dlna/library"))
 LIBRARY_CONFIG = Path(os.environ.get("LIBRARY_CONFIG", "/app/data/dlna/library.json"))
 RPC_IDS = itertools.count(1)
 SNAP_RPC_LOCK = threading.Lock()
+GROUP_MUTATION_LOCK = threading.Lock()
 SNAP_RPC_TARGET = urlparse(SNAPSERVER_RPC_URL)
 SNAP_RPC_SOCKET: socket.socket | None = None
 SNAP_RPC_BUFFER = bytearray()
@@ -45,6 +46,7 @@ MAX_PLAYLIST_BYTES = 1024 * 1024
 PLAYLIST_SCAN_TTL = 60
 PLAYLIST_SCAN_LOCK = threading.Lock()
 PLAYLIST_SCAN_CACHE: tuple[float, list[dict[str, Any]]] = (0.0, [])
+AIRPLAY_STOP_HELPER = os.environ.get("AIRPLAY_STOP_HELPER", "/app/unified/drop-airplay-session.sh")
 
 
 class ControlError(RuntimeError):
@@ -861,6 +863,160 @@ def set_zone_volume(group_id: Any, percent: Any, muted: bool = False) -> list[An
     ]
 
 
+def snap_name(value: Any, label: str) -> str:
+    name = str(value or "").strip()
+    if not name or len(name) > 64 or any(ord(char) < 32 for char in name):
+        raise ControlError(f"{label}必须为 1 到 64 个有效字符")
+    return name
+
+
+def requested_client_ids(value: Any) -> list[str]:
+    if not isinstance(value, list) or not value or len(value) > 128:
+        raise ControlError("设备列表必须包含 1 到 128 台设备")
+    client_ids = [str(item).strip() for item in value]
+    if any(not item for item in client_ids) or len(set(client_ids)) != len(client_ids):
+        raise ControlError("设备列表包含空值或重复设备")
+    return client_ids
+
+
+def snapcast_indexes(state: dict[str, Any]) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]]]:
+    groups = {group["id"]: group for group in state["groups"]}
+    clients = {client["id"]: client for group in state["groups"] for client in group["clients"]}
+    return groups, clients
+
+
+def validate_clients(client_ids: list[str], clients: dict[str, dict[str, Any]]) -> None:
+    missing = [client_id for client_id in client_ids if client_id not in clients]
+    if missing:
+        raise ControlError(f"未知设备：{', '.join(missing[:3])}")
+
+
+def set_group_name(group_id: Any, name: Any) -> dict[str, Any]:
+    with GROUP_MUTATION_LOCK:
+        state = normalized_snapcast_state()
+        groups, _ = snapcast_indexes(state)
+        identifier = str(group_id or "")
+        if identifier not in groups:
+            raise ControlError("播放组不存在")
+        snap_rpc("Group.SetName", {"id": identifier, "name": snap_name(name, "组名")})
+        return normalized_snapcast_state()
+
+
+def set_client_name(client_id: Any, name: Any) -> dict[str, Any]:
+    with GROUP_MUTATION_LOCK:
+        state = normalized_snapcast_state()
+        _, clients = snapcast_indexes(state)
+        identifier = str(client_id or "")
+        if identifier not in clients:
+            raise ControlError("设备不存在")
+        snap_rpc("Client.SetName", {"id": identifier, "name": snap_name(name, "设备名")})
+        return normalized_snapcast_state()
+
+
+def set_group_members(group_id: Any, client_ids_value: Any) -> dict[str, Any]:
+    with GROUP_MUTATION_LOCK:
+        state = normalized_snapcast_state()
+        groups, clients = snapcast_indexes(state)
+        identifier = str(group_id or "")
+        if identifier not in groups:
+            raise ControlError("播放组不存在")
+        client_ids = requested_client_ids(client_ids_value)
+        validate_clients(client_ids, clients)
+        snap_rpc("Group.SetClients", {"id": identifier, "clients": client_ids})
+        return normalized_snapcast_state()
+
+
+def create_group(name: Any, client_ids_value: Any, stream_id_value: Any = "") -> dict[str, Any]:
+    group_name = snap_name(name, "组名")
+    client_ids = requested_client_ids(client_ids_value)
+    stream_id = str(stream_id_value or "").strip()
+    with GROUP_MUTATION_LOCK:
+        state = normalized_snapcast_state()
+        groups, clients = snapcast_indexes(state)
+        validate_clients(client_ids, clients)
+        if stream_id and stream_id not in {stream["id"] for stream in state["streams"]}:
+            raise ControlError("音源不存在")
+
+        selected = set(client_ids)
+        target = next((group for group in groups.values() if {client["id"] for client in group["clients"]} == selected), None)
+        if target is None:
+            anchor = client_ids[0]
+            origin = next(group for group in groups.values() if any(client["id"] == anchor for client in group["clients"]))
+            origin_ids = [client["id"] for client in origin["clients"]]
+            if len(origin_ids) > 1:
+                snap_rpc("Group.SetClients", {"id": origin["id"], "clients": [item for item in origin_ids if item != anchor]})
+                state = normalized_snapcast_state()
+                target = next((group for group in state["groups"] if any(client["id"] == anchor for client in group["clients"])), None)
+            else:
+                target = origin
+            if target is None:
+                raise ControlError("Snapserver 未能建立新播放组")
+            snap_rpc("Group.SetClients", {"id": target["id"], "clients": client_ids})
+
+        snap_rpc("Group.SetName", {"id": target["id"], "name": group_name})
+        if stream_id:
+            snap_rpc("Group.SetStream", {"id": target["id"], "stream_id": stream_id})
+        return normalized_snapcast_state()
+
+
+def merge_groups(source_group_id: Any, target_group_id: Any) -> dict[str, Any]:
+    source_id, target_id = str(source_group_id or ""), str(target_group_id or "")
+    if source_id == target_id:
+        raise ControlError("不能将播放组合并到自身")
+    with GROUP_MUTATION_LOCK:
+        state = normalized_snapcast_state()
+        groups, _ = snapcast_indexes(state)
+        if len(groups) < 2:
+            raise ControlError("最后一个播放组不能删除")
+        if source_id not in groups or target_id not in groups:
+            raise ControlError("播放组不存在")
+        combined = [client["id"] for group in (groups[target_id], groups[source_id]) for client in group["clients"]]
+        snap_rpc("Group.SetClients", {"id": target_id, "clients": list(dict.fromkeys(combined))})
+        return normalized_snapcast_state()
+
+
+def stop_all_sources() -> dict[str, Any]:
+    errors: list[str] = []
+    mpd_stopped = False
+    airplay_dropped = False
+    try:
+        mpd_command("stop")
+        mpd_stopped = True
+    except ControlError as exc:
+        errors.append(f"MPD：{exc}")
+
+    try:
+        before = normalized_snapcast_state()
+        airplay = next((stream for stream in before["streams"] if stream["id"].casefold() == "airplay"), None)
+        if airplay is None or airplay.get("status") != "playing":
+            airplay_dropped = True
+        else:
+            completed = subprocess.run(
+                [AIRPLAY_STOP_HELPER], capture_output=True, text=True, timeout=8, check=False,
+            )
+            if completed.returncode != 0:
+                detail = (completed.stderr or completed.stdout or "辅助脚本执行失败").strip()
+                raise ControlError(detail)
+            airplay_dropped = True
+    except (ControlError, OSError, subprocess.TimeoutExpired) as exc:
+        errors.append(f"AirPlay：{exc}")
+
+    streams: list[dict[str, Any]] = []
+    for _ in range(6):
+        try:
+            streams = normalized_snapcast_state()["streams"]
+            if all(stream.get("status") != "playing" for stream in streams):
+                break
+        except ControlError as exc:
+            errors.append(f"状态刷新：{exc}")
+            break
+        time.sleep(0.25)
+    still_playing = [stream.get("id", "未知音源") for stream in streams if stream.get("status") == "playing"]
+    if still_playing:
+        errors.append(f"状态确认：{', '.join(still_playing)} 仍显示播放中")
+    return {"mpdStopped": mpd_stopped, "airplayDropped": airplay_dropped, "streams": streams, "errors": errors}
+
+
 def combined_state() -> dict[str, Any]:
     errors: list[str] = []
     snapcast, player = {"available": False, "streams": [], "groups": []}, {"available": False, "state": "stop", "song": {}}
@@ -982,7 +1138,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("X-Frame-Options", "DENY")
         self.send_header("Referrer-Policy", "no-referrer")
-        self.send_header("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:")
+        self.send_header("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; frame-src http://*:1782 https://*:1782")
         for name, value in (extra or {}).items():
             self.send_header(name, value)
         self.end_headers()
@@ -1128,6 +1284,18 @@ class Handler(BaseHTTPRequestHandler):
             elif path == "/api/snapcast/all-stream":
                 stream_id = str(body.get("streamId", ""))
                 result = [snap_rpc("Group.SetStream", {"id": group["id"], "stream_id": stream_id}) for group in normalized_snapcast_state()["groups"]]
+            elif path == "/api/snapcast/group-name":
+                result = set_group_name(body.get("groupId"), body.get("name"))
+            elif path == "/api/snapcast/client-name":
+                result = set_client_name(body.get("clientId"), body.get("name"))
+            elif path == "/api/snapcast/group-members":
+                result = set_group_members(body.get("groupId"), body.get("clientIds"))
+            elif path == "/api/snapcast/group-create":
+                result = create_group(body.get("name"), body.get("clientIds"), body.get("streamId"))
+            elif path == "/api/snapcast/group-merge":
+                result = merge_groups(body.get("sourceGroupId"), body.get("targetGroupId"))
+            elif path == "/api/sources/stop-all":
+                result = stop_all_sources()
             else:
                 self.send_error(HTTPStatus.NOT_FOUND); return
             self.json_response({"ok": True, "result": result})

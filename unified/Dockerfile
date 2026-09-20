@@ -16,6 +16,7 @@ COPY control/app.py /app/control/app.py
 COPY control/static /app/control/static
 
 RUN chmod 0755 /app/unified/entrypoint.sh /app/unified/healthcheck.sh \
+        /app/unified/drop-airplay-session.sh \
         /app/unified/shairport-entrypoint.sh /app/unified/snapserver-entrypoint.sh \
         /app/unified/upmpdcli-entrypoint.sh /app/unified/smoke-test.sh \
         /app/unified/verify_discovery.py /app/unified/verify_upnp_next.py \

@@ -131,10 +131,12 @@ docker compose up -d --remove-orphans --wait --wait-timeout 180
 
 ## Web 结构
 
-1781 控制台采用原生 ES Modules，只负责 Snapcast 设备、音源、音量、静音和延迟：
+1781 控制台采用原生 ES Modules，默认进入设备页，负责 Snapcast 音源、音量、静音、延迟、设备重命名与播放组管理：
 
-- `control/static/js/`：API、状态、设备与通用 UI
+- `control/static/js/`：API、状态、设备、播放组与通用 UI
 - `control/static/styles/`：令牌、基础、布局、设备卡片与响应式样式
 - `control/static/icons/`：本地 SVG Sprite；来源和许可见 `NOTICE.md`
 
-1782 由未修改的 myMPD 提供播放器、曲库、封面、歌词、队列和歌单界面。myMPD 状态持久化在 `data/mympd`，并连接同容器内的 MPD Unix socket。
+“播放器”页通过同主机 `:1782` 全屏嵌入未修改的 myMPD，并保留重新加载和新窗口打开入口。myMPD 提供播放器、曲库、封面、歌词、队列和歌单界面，状态持久化在 `data/mympd`，并连接同容器内的 MPD Unix socket。
+
+设备页的“立即停止”会停止 MPD（保留队列）并断开当前 AirPlay 会话，不会修改任何设备的音量、静音、延迟或播放组。AirPlay 优先使用 Shairport Sync 的 D-Bus `DropSession`；接口不可用时由固定的无参数辅助脚本终止接收进程，Supervisor 随即恢复接收服务。

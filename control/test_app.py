@@ -40,7 +40,13 @@ from app import (
     should_recover_remote,
     song_payload,
     source_descriptor,
+    create_group,
+    merge_groups,
+    set_client_name,
+    set_group_members,
+    set_group_name,
     set_zone_volume,
+    stop_all_sources,
 )
 
 
@@ -245,6 +251,76 @@ class ControlHelpersTest(unittest.TestCase):
             set_zone_volume("g1", 42)
         rpc.assert_called_once_with("Client.SetVolume", {"id": "a", "volume": {"muted": False, "percent": 42}})
 
+    @staticmethod
+    def snap_state(groups, streams=None):
+        return {"groups": groups, "streams": streams or [{"id": "Default", "status": "idle"}]}
+
+    def test_group_and_client_rename_validate_current_state(self):
+        state = self.snap_state([{"id": "g1", "name": "客厅", "clients": [{"id": "c1"}]}])
+        with patch("app.normalized_snapcast_state", return_value=state), patch("app.snap_rpc", return_value={}) as rpc:
+            set_group_name("g1", "影音室")
+            set_client_name("c1", "左音箱")
+        self.assertEqual(rpc.call_args_list[0].args, ("Group.SetName", {"id": "g1", "name": "影音室"}))
+        self.assertEqual(rpc.call_args_list[1].args, ("Client.SetName", {"id": "c1", "name": "左音箱"}))
+
+    def test_group_members_reject_duplicates_and_unknown_clients(self):
+        state = self.snap_state([{"id": "g1", "clients": [{"id": "c1"}]}])
+        with patch("app.normalized_snapcast_state", return_value=state):
+            with self.assertRaises(ControlError):
+                set_group_members("g1", ["c1", "c1"])
+            with self.assertRaises(ControlError):
+                set_group_members("g1", ["missing"])
+
+    def test_create_group_splits_anchor_then_moves_selected_clients(self):
+        initial = self.snap_state([
+            {"id": "g1", "name": "A", "clients": [{"id": "c1"}, {"id": "c2"}]},
+            {"id": "g2", "name": "B", "clients": [{"id": "c3"}]},
+        ])
+        split = self.snap_state([
+            {"id": "g1", "name": "A", "clients": [{"id": "c2"}]},
+            {"id": "g3", "name": "播放组", "clients": [{"id": "c1"}]},
+            {"id": "g2", "name": "B", "clients": [{"id": "c3"}]},
+        ])
+        final = self.snap_state([{"id": "g3", "name": "新组", "clients": [{"id": "c1"}, {"id": "c3"}]}])
+        with patch("app.normalized_snapcast_state", side_effect=[initial, split, final]), patch("app.snap_rpc", return_value={}) as rpc:
+            create_group("新组", ["c1", "c3"], "Default")
+        calls = [call.args for call in rpc.call_args_list]
+        self.assertEqual(calls[0], ("Group.SetClients", {"id": "g1", "clients": ["c2"]}))
+        self.assertIn(("Group.SetClients", {"id": "g3", "clients": ["c1", "c3"]}), calls)
+        self.assertIn(("Group.SetName", {"id": "g3", "name": "新组"}), calls)
+        self.assertIn(("Group.SetStream", {"id": "g3", "stream_id": "Default"}), calls)
+
+    def test_merge_groups_moves_members_and_protects_last_group(self):
+        one = self.snap_state([{"id": "g1", "clients": [{"id": "c1"}]}])
+        with patch("app.normalized_snapcast_state", return_value=one):
+            with self.assertRaises(ControlError):
+                merge_groups("g1", "g2")
+        two = self.snap_state([
+            {"id": "g1", "clients": [{"id": "c1"}]},
+            {"id": "g2", "clients": [{"id": "c2"}]},
+        ])
+        with patch("app.normalized_snapcast_state", return_value=two), patch("app.snap_rpc", return_value={}) as rpc:
+            merge_groups("g1", "g2")
+        rpc.assert_called_once_with("Group.SetClients", {"id": "g2", "clients": ["c2", "c1"]})
+
+    def test_stop_all_keeps_queue_and_skips_airplay_restart_when_idle(self):
+        idle = self.snap_state([], [{"id": "Airplay", "status": "idle"}, {"id": "DLNA", "status": "idle"}])
+        with patch("app.mpd_command", return_value=[]) as mpd, patch("app.normalized_snapcast_state", return_value=idle), patch("app.subprocess.run") as run:
+            result = stop_all_sources()
+        mpd.assert_called_once_with("stop")
+        run.assert_not_called()
+        self.assertTrue(result["mpdStopped"])
+        self.assertTrue(result["airplayDropped"])
+
+    def test_stop_all_reports_airplay_helper_failure_without_masking_mpd(self):
+        playing = self.snap_state([], [{"id": "Airplay", "status": "playing"}])
+        completed = app_module.subprocess.CompletedProcess([], 1, "", "drop failed")
+        with patch("app.mpd_command", return_value=[]), patch("app.normalized_snapcast_state", return_value=playing), patch("app.subprocess.run", return_value=completed):
+            result = stop_all_sources()
+        self.assertTrue(result["mpdStopped"])
+        self.assertFalse(result["airplayDropped"])
+        self.assertIn("AirPlay", result["errors"][0])
+
 
 class AuthHttpTest(unittest.TestCase):
     def setUp(self):
@@ -336,9 +412,12 @@ class AuthHttpTest(unittest.TestCase):
         response = self.request("/js/api.js")
         self.assertEqual(response.status, 200)
         self.assertIn("javascript", response.headers["Content-Type"])
-        index = self.request("/").read().decode("utf-8")
+        index_response = self.request("/")
+        self.assertIn("frame-src http://*:1782", index_response.headers["Content-Security-Policy"])
+        index = index_response.read().decode("utf-8")
         self.assertIn("设备", index)
         self.assertIn(":1782/", index)
+        self.assertIn('data-page="player"', index)
         self.assertNotIn('data-page="music"', index)
         self.assertNotIn('data-page="queue"', index)
         with self.assertRaises(urllib.error.HTTPError) as error:

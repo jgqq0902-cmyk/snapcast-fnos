@@ -13,6 +13,7 @@
   <link rel="stylesheet" href="/styles/rooms.css">
   <link rel="stylesheet" href="/styles/responsive.css">
   <link rel="stylesheet" href="/styles/device-console.css">
+  <link rel="stylesheet" href="/styles/group-manager.css">
 </head>
 <body>
   <div class="atmosphere" aria-hidden="true"></div>
@@ -21,7 +22,7 @@
       <a class="brand" href="#devices" aria-label="Snapcast 设备"><span class="brand-disc"></span><b>SNAP</b><i>/</i>CAST</a>
       <nav class="primary-nav" aria-label="主功能">
         <button class="active" data-route="devices"><svg><use href="/icons.svg#icon-speaker"/></svg><span>设备</span><em id="zoneCount">0</em></button>
-        <a id="mympdLink" class="nav-link" href="http://192.168.2.126:1782/"><svg><use href="/icons.svg#icon-library"/></svg><span>播放器</span><svg class="nav-arrow"><use href="/icons.svg#icon-chevron-right"/></svg></a>
+        <button data-route="player"><svg><use href="/icons.svg#icon-library"/></svg><span>播放器</span></button>
         <button data-route="settings"><svg><use href="/icons.svg#icon-menu"/></svg><span>设置</span></button>
       </nav>
       <div class="connection"><span id="healthLamp"></span><div><b id="healthText">正在连接</b><small id="gatewayName">本机网关</small></div></div>
@@ -29,8 +30,13 @@
 
     <main class="workspace">
       <section class="view active" data-page="devices">
-        <header class="page-header"><div><p>SNAPCAST</p><h1>设备</h1></div><div class="header-actions"><a id="openPlayerButton" class="accent-btn" href="http://192.168.2.126:1782/"><svg><use href="/icons.svg#icon-play-filled"/></svg>打开播放器</a><button class="icon-btn" id="refreshRooms" aria-label="刷新设备"><svg><use href="/icons.svg#icon-refresh"/></svg></button></div></header>
+        <header class="page-header"><div><p>SNAPCAST</p><h1>设备</h1></div><div class="header-actions"><button class="stop-all-btn" id="stopAllSources" aria-label="立即停止所有音源"><svg><use href="/icons.svg#icon-stop"/></svg><span>立即停止</span></button><button class="secondary-btn" id="manageGroups" aria-label="管理播放组"><svg><use href="/icons.svg#icon-network"/></svg><span>管理播放组</span></button><button class="icon-btn" id="refreshRooms" aria-label="刷新设备"><svg><use href="/icons.svg#icon-refresh"/></svg></button></div></header>
         <div id="zoneList" class="zone-grid"><p class="empty">正在读取设备…</p></div>
+      </section>
+
+      <section class="view player-view" data-page="player">
+        <header class="player-toolbar"><div><p>MYMPD</p><strong>播放器</strong></div><div><button class="secondary-btn" id="reloadPlayer" aria-label="重新加载播放器"><svg><use href="/icons.svg#icon-refresh"/></svg><span>重新加载</span></button><a class="icon-btn" id="openPlayerWindow" href="http://192.168.2.126:1782/" target="_blank" rel="noopener" aria-label="在新窗口打开"><svg><use href="/icons.svg#icon-export"/></svg></a></div></header>
+        <div class="player-frame-shell"><div class="player-frame-placeholder" id="playerPlaceholder"><span class="brand-disc large"></span><b>播放器准备就绪</b><small>首次进入时加载 myMPD</small></div><iframe id="mympdFrame" title="myMPD 播放器" loading="lazy"></iframe></div>
       </section>
 
       <section class="view" data-page="settings">
@@ -46,6 +52,9 @@
   </div>
 
   <dialog id="loginDialog" class="modal" data-static><form class="dialog-card login-card" id="loginForm"><span class="brand-disc large"></span><small>PRIVATE LISTENING</small><h2>登录控制台</h2><p id="loginHint">请输入本地管理员凭据</p><label><span>用户名</span><input id="loginUsername" autocomplete="username" required></label><label><span>密码</span><input id="loginPassword" type="password" autocomplete="current-password" required></label><button class="accent-btn">登录</button></form></dialog>
+  <dialog id="groupsDialog" class="modal"><div class="dialog-card group-manager-card"><header><div><small>SNAPCAST</small><h2>管理播放组</h2></div><button class="icon-btn" data-close-dialog aria-label="关闭"><svg><use href="/icons.svg#icon-close"/></svg></button></header><div id="groupManager"></div><footer><button class="accent-btn" id="createGroupButton"><svg><use href="/icons.svg#icon-plus"/></svg>新建播放组</button></footer></div></dialog>
+  <dialog id="groupFormDialog" class="modal"><form class="dialog-card group-form-card" id="groupForm"><small id="groupFormEyebrow">PLAY GROUP</small><h2 id="groupFormTitle">编辑播放组</h2><label id="groupNameField"><span>名称</span><input id="groupNameInput" maxlength="64" required></label><label id="groupStreamField"><span>音源</span><select id="groupStreamInput"></select></label><fieldset id="groupClientField"><legend>设备（至少一台）</legend><div id="groupClientOptions" class="client-options"></div></fieldset><label id="mergeTargetField"><span>合并到</span><select id="mergeTargetInput"></select></label><div class="dialog-actions"><button type="button" class="secondary" data-close-dialog>取消</button><button class="accent-btn" id="groupFormSubmit">保存</button></div></form></dialog>
+  <dialog id="nameDialog" class="modal"><form class="dialog-card compact-dialog" id="nameForm"><small>RENAME</small><h2 id="nameTitle">重命名</h2><label><span>新名称</span><input id="nameInput" maxlength="64" required></label><div class="dialog-actions"><button type="button" class="secondary" data-close-dialog>取消</button><button class="accent-btn">保存</button></div></form></dialog>
   <dialog id="confirmDialog" class="modal"><form class="dialog-card compact-dialog" id="confirmForm"><h2 id="confirmTitle">请确认</h2><p id="confirmMessage"></p><div class="dialog-actions"><button type="button" class="secondary" data-close-dialog>取消</button><button class="danger-action">确认</button></div></form></dialog>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script type="module" src="/app.js"></script>

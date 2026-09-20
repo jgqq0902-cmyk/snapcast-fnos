@@ -1,6 +1,7 @@
 import { post, request } from "./js/api.js";
 import { state } from "./js/store.js";
-import { $, $$, closeDialog, openDialog, toast } from "./js/ui.js";
+import { $, $$, askConfirm, closeDialog, openDialog, toast } from "./js/ui.js";
+import { initGroups, renderGroupManager } from "./js/groups.js";
 import { renderZones } from "./js/zones.js";
 
 let pollTimer;
@@ -8,14 +9,16 @@ let bootstrapped = false;
 
 async function start() {
   initTheme();
-  initEvents();
   setPlayerLinks();
+  initEvents();
+  initGroups();
   await checkAuth();
 }
 
 function setPlayerLinks() {
   const url = `${location.protocol}//${location.hostname}:1782/`;
-  ["#mympdLink", "#openPlayerButton", "#settingsPlayerLink"].forEach(selector => { $(selector).href = url; });
+  ["#openPlayerWindow", "#settingsPlayerLink"].forEach(selector => { $(selector).href = url; });
+  $("#mympdFrame").dataset.src = url;
 }
 
 async function checkAuth() {
@@ -69,6 +72,7 @@ async function refreshState() {
     $("#healthText").textContent = state.system.healthy ? "服务在线" : "部分异常";
     $("#gatewayName").textContent = state.system.hostname || "本机网关";
     renderZones();
+    if ($("#groupsDialog").open) renderGroupManager();
   } catch (error) {
     if (error.status === 401) return;
     $("#healthLamp").classList.remove("ok");
@@ -77,9 +81,21 @@ async function refreshState() {
 }
 
 function navigate(route) {
+  if (!["devices", "player", "settings"].includes(route)) route = "devices";
   $$('[data-route]').forEach(button => button.classList.toggle("active", button.dataset.route === route));
   $$('[data-page]').forEach(page => page.classList.toggle("active", page.dataset.page === route));
+  document.body.classList.toggle("player-mode", route === "player");
+  if (route === "player") loadPlayer();
   history.replaceState(null, "", `#${route}`);
+}
+
+function loadPlayer(force = false) {
+  const frame = $("#mympdFrame");
+  if (!frame.dataset.src) return;
+  if (force || !frame.hasAttribute("src")) {
+    $("#playerPlaceholder").classList.remove("hidden");
+    frame.src = frame.dataset.src;
+  }
 }
 
 function initEvents() {
@@ -93,9 +109,32 @@ function initEvents() {
   });
   $("#loginForm").onsubmit = login;
   $("#refreshRooms").onclick = refreshState;
+  $("#reloadPlayer").onclick = () => loadPlayer(true);
+  $("#mympdFrame").onload = () => $("#playerPlaceholder").classList.add("hidden");
+  $("#stopAllSources").onclick = stopAllSources;
   $("#logoutButton").onclick = logout;
   $("#themeSelect").onchange = event => setTheme(event.target.value);
-  navigate(location.hash.slice(1) === "settings" ? "settings" : "devices");
+  navigate(["player", "settings"].includes(location.hash.slice(1)) ? location.hash.slice(1) : "devices");
+}
+
+async function stopAllSources() {
+  const confirmed = await askConfirm("立即停止所有音源？", "将停止本地与 DLNA 播放并断开当前 AirPlay 会话。MPD 队列和播放位置会保留，设备音量、静音、延迟和分组不会改变。");
+  if (!confirmed) return;
+  const button = $("#stopAllSources");
+  const content = button.innerHTML;
+  button.disabled = true;
+  button.textContent = "正在停止…";
+  try {
+    const response = await post("/api/sources/stop-all", {});
+    const errors = response.result?.errors || [];
+    toast(errors.length ? `部分音源停止失败：${errors.join("；")}` : "所有音源已停止", Boolean(errors.length), errors.length ? 6000 : 2800);
+    await refreshState();
+  } catch (error) {
+    toast(error.message, true, 5000);
+  } finally {
+    button.innerHTML = content;
+    button.disabled = false;
+  }
 }
 
 async function logout() {
