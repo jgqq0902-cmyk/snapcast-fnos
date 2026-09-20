@@ -4,8 +4,8 @@ set -eu
 # This is intentionally a fixed, argument-free helper. Prefer Shairport Sync's
 # native D-Bus API; if the image does not expose it, Supervisor will restart the
 # receiver after the current process is terminated.
-if command -v dbus-send >/dev/null 2>&1 && [ -n "${DBUS_SESSION_BUS_ADDRESS:-}" ]; then
-    if dbus-send --session --type=method_call --dest=org.gnome.ShairportSync \
+if command -v dbus-send >/dev/null 2>&1; then
+    if timeout 3 dbus-send --system --type=method_call --dest=org.gnome.ShairportSync \
         /org/gnome/ShairportSync org.gnome.ShairportSync.DropSession >/dev/null 2>&1; then
         echo dbus
         exit 0
