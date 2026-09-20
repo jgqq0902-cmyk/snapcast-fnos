@@ -1,50 +1,140 @@
-# Snapcast FNOS 音源网关
+# snapcast-fnos
 
-面向 FNOS 的单容器多房间音频网关。一个镜像内集成 Snapserver、AirPlay 1、DLNA Media Renderer、MPD 本地播放器和移动端 Web 控制台。
+面向 FNOS 的单容器多房间音频网关。镜像内集成 Snapserver、AirPlay 1、DLNA Media Renderer、MPD、myMPD 播放器和精简设备控制台。
 
-## 功能
+## 能力与边界
 
-- AirPlay 1 接收器：Shairport Sync
-- DLNA Media Renderer：upmpdcli + MPD
-- 本地曲库、播放队列、歌单导入与导出
-- Snapcast 设备音量、静音、音源和延迟补偿控制
-- AirPlay 优先的 `Default` Meta 流
-- 响应式 Web 控制台
-- 单 Docker 容器部署和健康检查
+- AirPlay 接收器：`Snapcast-AirPlay`（Shairport Sync）
+- DLNA Media Renderer：`Snapcast-DLNA`（upmpdcli + MPD）
+- myMPD 提供本地曲库、队列、歌单、封面和本地歌词
+- 按播放区域控制音源、音量、静音和客户端延迟
+- `Default` Meta 流按 `Airplay/DLNA` 顺序选择，AirPlay 优先
+- 不连接在线元数据、图标 CDN、遥测或外部管理服务
 
-## 默认网络
+## 网络与安全
 
-示例 Compose 使用 macvlan：
+所有 LAN 参数只在 `.env` 配置。默认示例为：
 
-- 网段：`192.168.2.0/24`
-- 网关：`192.168.2.8`
-- 父接口：`eno2-ovs`
-- 容器地址：`192.168.2.125`
-- Web 控制台：`http://192.168.2.125:1781/`
-- Snapcast：TCP `1704`、`1705`、`1780`
-- AirPlay：TCP `5000`
+| 接口 | 地址 | 可见范围 |
+| --- | --- | --- |
+| 设备控制台 | `http://192.168.2.126:1781/` | LAN，默认需要登录 |
+| myMPD 播放器 | `http://192.168.2.126:1782/` | LAN |
+| Snapclient 音频 | `192.168.2.126:1704` | LAN |
+| AirPlay | `192.168.2.126:5000` 及动态端口 | LAN/mDNS |
+| DLNA | `192.168.2.126` | LAN/SSDP |
+| Snapserver HTTP/JSON-RPC | `127.0.0.1:1780` | 仅容器内部 |
+| Snapserver TCP control | `127.0.0.1:1705` | 仅容器内部 |
 
-部署到其他网络前，请修改 `docker-compose.yml` 中的网段、网关、父接口和静态地址。
+1780 和 1705 不再对 LAN 开放，避免绕过 Web 控制台鉴权。旧 Snapweb 因此不再作为外部入口；统一入口是 1781。仅在完全可信且隔离的家庭 LAN 中，才可将 `CONTROL_AUTH_ENABLED=false`。
 
-## FNOS 部署
+## 首次部署
+
+1. 在 FNOS 准备项目并创建环境配置：
 
 ```sh
 cd /vol1/1000/tools/snapcast
-docker compose config
-docker compose build
-docker compose up -d --wait --wait-timeout 180
-docker compose ps
+cp .env.example .env
+chmod 600 .env
 ```
 
-默认只读挂载 `/vol1/1000` 到容器 `/media`。持久化配置、运行数据和证书分别位于项目目录的 `config`、`data` 和 `certs`，这些目录不会提交到 Git。
+2. 编辑 `.env`：
 
-## 测试
+- `GATEWAY_IP`、`LAN_SUBNET`、`LAN_GATEWAY`、`MACVLAN_PARENT` 必须匹配实际 LAN。
+- `CONTROL_PASSWORD` 必须改为较长且唯一的密码，不要提交 `.env`。
+- `PUID`/`PGID` 应能读取曲库并写入项目的 `data` 目录。默认 `1000:1001` 适配 `/vol1/1000/music` 的当前 FNOS 权限；可用 `stat -c '%u:%g %a %n' /vol1/1000/music` 核实。
+
+3. 校验、构建并启动：
+
+```sh
+docker compose config -q
+docker compose build
+mkdir -p config data certs
+cp snapserver.conf config/snapserver.conf
+docker compose up -d --wait --wait-timeout 180
+docker exec snapcast /app/unified/smoke-test.sh
+```
+
+默认将 `/vol1/1000` 只读挂载为 `/media`。控制台只保存曲库相对路径和 MPD 状态，不会修改音乐文件。持久化目录 `config/`、`data/`、`certs/`、`.env` 均已从 Git 排除。
+
+也可在已经运行旧版本时使用部署脚本。它会备份运行配置与旧镜像，校验密码，构建、切换并执行冒烟测试：
+
+```sh
+sh unified/deploy-console.sh
+```
+
+## 从旧版本迁移
+
+1. 先备份 `docker-compose.yml`、`config/`、`data/` 和当前镜像。
+2. 从 `.env.example` 创建 `.env`，设置网络、`PUID/PGID` 和控制台密码。
+3. 将仓库的 `snapserver.conf` 复制到 `config/snapserver.conf`；仅改 Compose 不会更新已挂载的运行时配置。
+4. 重建单容器。Snapclient 应连接 `.env` 中的 `GATEWAY_IP:1704`。
+5. 登录 1781 设备控制台检查音源、音量和延迟，再打开 1782 的 myMPD 检查曲库、封面、歌词、队列和歌单。
+
+认证会话保存在内存中，容器重启或会话到期后需要重新登录。登录失败具有按来源地址的短时限速。
+
+## 验证
+
+本地快速检查：
 
 ```sh
 python -m unittest control.test_app -q
 node --check control/static/app.js
+node --check control/static/js/api.js
+node --check control/static/js/store.js
+node --check control/static/js/ui.js
+node --check control/static/js/zones.js
+docker compose config -q
 ```
 
-## 第三方资源
+容器内检查：
 
-控制台图标的来源和许可信息见 `control/static/icons/NOTICE.md`。项目没有加载外部图标 CDN、遥测或在线元数据服务。
+```sh
+docker exec snapcast /app/unified/smoke-test.sh
+```
+
+从同一 LAN 的另一台机器检查网络边界：
+
+```sh
+nc -vz 192.168.2.126 1704       # 应成功
+nc -vz 192.168.2.126 1705       # 应失败
+nc -vz 192.168.2.126 1780       # 应失败
+nc -vz 192.168.2.126 1782       # 应成功
+GATEWAY_IP=192.168.2.126 python unified/verify_discovery.py
+```
+
+UPnP 连播回归会暂时改写已停止的 MPD 队列，结束后恢复原队列。开启鉴权时通过环境变量传入凭据，脚本不会输出密码：
+
+```sh
+CONTROL_USERNAME=admin CONTROL_PASSWORD='your-password' \
+python unified/verify_upnp_next.py DESCRIPTION_URL http://192.168.2.126:1781
+```
+
+另需人工验证：iPhone 可发现 AirPlay、DLNA 控制端可发现设备并连续切集、S12/R1 同步发声、390/768/1440px 页面无横向溢出、触屏操作目标易于点击。
+
+## 回滚
+
+部署脚本失败时会自动恢复旧镜像和运行时 Snapserver 配置。手工回滚时使用脚本输出的备份标签：
+
+```sh
+docker image tag snapcast-all-in-one:backup-YYYYMMDD-HHMMSS snapcast-all-in-one:local
+cp backups/YYYYMMDD-HHMMSS-audit-remediation/snapserver.runtime.conf config/snapserver.conf
+docker compose up -d --remove-orphans --wait --wait-timeout 180
+```
+
+不要删除 `data/`；其中包含 MPD 数据库、歌单、曲库配置和 Snapcast 的 `server.json`。
+
+## 可复现构建与升级
+
+基础镜像固定为已验证 digest；Alpine 软件源使用国内可达的清华镜像并保留 APK 签名校验。关键包固定为：MPD `0.24.15-r0`、myMPD `25.3.0-r0`、upmpdcli `1.9.17-r1`、py3-mutagen `1.48.0-r0`。构建会输出这些实际版本。
+
+升级依赖时单独提交变更：先确认新 digest 和包版本，在测试环境完成单元测试、镜像构建、容器冒烟、AirPlay/DLNA 发现与连续播放，再更新固定值。不要改回 `latest` 或无版本约束。
+
+## Web 结构
+
+1781 控制台采用原生 ES Modules，只负责 Snapcast 设备、音源、音量、静音和延迟：
+
+- `control/static/js/`：API、状态、设备与通用 UI
+- `control/static/styles/`：令牌、基础、布局、设备卡片与响应式样式
+- `control/static/icons/`：本地 SVG Sprite；来源和许可见 `NOTICE.md`
+
+1782 由未修改的 myMPD 提供播放器、曲库、封面、歌词、队列和歌单界面。myMPD 状态持久化在 `data/mympd`，并连接同容器内的 MPD Unix socket。

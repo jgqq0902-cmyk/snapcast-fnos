@@ -1,0 +1,22 @@
+* { box-sizing: border-box; }
+html { min-height: 100%; background: var(--bg); }
+body { min-width: 320px; min-height: 100vh; margin: 0; overflow-x: hidden; background: var(--bg); color: var(--text-primary); font-family: "Avenir Next", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif; font-size: 14px; }
+button, input, select { color: inherit; font: inherit; }
+button { border: 0; background: none; cursor: pointer; }
+button:disabled, input:disabled { cursor: not-allowed; opacity: .38; }
+button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+svg { width: 24px; height: 24px; display: block; fill: currentColor; }
+h1, h2, h3, p { overflow-wrap: anywhere; }
+h1, h2 { font-family: "Iowan Old Style", "Songti SC", Georgia, serif; font-weight: 500; }
+input, select { min-width: 0; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface-1); }
+input[type="range"] { -webkit-appearance: none; appearance: none; width: 100%; height: 28px; margin: 0; border: 0; background: transparent; cursor: pointer; }
+input[type="range"]::-webkit-slider-runnable-track { height: 4px; border-radius: 999px; background: color-mix(in srgb, var(--text-primary) 18%, transparent); }
+input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 18px; height: 18px; margin-top: -7px; border: 2px solid var(--surface-solid); border-radius: 50%; background: var(--art-accent); box-shadow: 0 2px 8px rgb(0 0 0 / .28); }
+input[type="range"]::-moz-range-track { height: 4px; border: 0; border-radius: 999px; background: color-mix(in srgb, var(--text-primary) 18%, transparent); }
+input[type="range"]::-moz-range-thumb { width: 18px; height: 18px; border: 2px solid var(--surface-solid); border-radius: 50%; background: var(--art-accent); box-shadow: 0 2px 8px rgb(0 0 0 / .28); }
+[hidden] { display: none !important; }
+.atmosphere { position: fixed; inset: 0; pointer-events: none; background: radial-gradient(circle at 86% 12%, var(--art-accent-soft), transparent 28%), radial-gradient(circle at 25% 85%, rgb(153 94 69 / .12), transparent 34%); }
+.empty { padding: 32px 12px; color: var(--text-secondary); text-align: center; }
+.technical { color: var(--text-secondary); font-size: 11px; letter-spacing: .04em; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--success); }
+.dot.off { background: var(--text-secondary); opacity: .5; }

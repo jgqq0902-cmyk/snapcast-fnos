@@ -1,0 +1,55 @@
+.icon-btn { width: var(--control); height: var(--control); display: grid; place-items: center; flex: 0 0 var(--control); border-radius: 50%; background: var(--surface-1); }
+.icon-btn svg { width: 20px; height: 20px; }
+.icon-btn:hover, .toggle-btn.on { background: var(--brand-soft); color: var(--brand); }
+.icon-btn.danger { color: var(--danger); }
+.accent-btn, .secondary-btn, .dialog-actions button, .settings-card form > button { min-height: 42px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 0 16px; border-radius: 13px; background: var(--art-accent); color: var(--on-art-accent); font-weight: 700; }
+.accent-btn svg { width: 19px; height: 19px; }
+.secondary-btn, .dialog-actions button.secondary { background: var(--surface-2); color: var(--text-primary); }
+.dialog-actions button.danger, .danger-action { background: color-mix(in srgb, var(--danger) 18%, transparent); color: var(--danger); }
+.toast { position: fixed; z-index: 100; left: 50%; bottom: calc(var(--player-height) + 22px); max-width: calc(100vw - 32px); padding: 11px 16px; border-radius: 999px; background: var(--text-primary); color: var(--bg); opacity: 0; transform: translate(-50%, 12px); pointer-events: none; transition: .2s ease; }
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+.toast.error { background: var(--danger); color: white; }
+.modal { width: 100%; max-width: none; height: 100%; max-height: none; margin: 0; padding: 24px; border: 0; background: rgb(12 9 8 / .6); color: var(--text-primary); }
+.modal::backdrop { background: rgb(12 9 8 / .45); backdrop-filter: blur(10px); }
+.dialog-card { position: relative; width: min(760px, 100%); max-height: calc(100vh - 48px); margin: auto; padding: 26px; overflow: auto; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface-solid); box-shadow: var(--shadow-1); }
+.dialog-card > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.dialog-card > header small { color: var(--brand); font-size: 10px; letter-spacing: .15em; }
+.dialog-card > header h2 { margin: 5px 0 0; font-size: 28px; }
+.compact-dialog { width: min(430px, 100%); margin-top: 18vh; }
+.compact-dialog > h2 { margin-top: 0; }
+.compact-dialog > p { color: var(--text-secondary); line-height: 1.6; }
+.compact-dialog > input { width: 100%; height: 44px; padding: 0 12px; }
+.dialog-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0; }
+.login-card { width: min(420px, 100%); margin-top: 12vh; text-align: center; }
+.login-card h2 { margin: 4px 0; font-size: 32px; }
+.login-card p { color: var(--text-secondary); }
+.login-card label { display: grid; gap: 6px; margin: 14px 0; text-align: left; }
+.login-card label span { color: var(--text-secondary); font-size: 11px; }
+.login-card input { height: 46px; padding: 0 13px; }
+.login-card .accent-btn { width: 100%; margin-top: 8px; }
+.track-list { min-width: 0; }
+.track-row { min-width: 0; min-height: 60px; display: grid; grid-template-columns: 42px minmax(0, 1fr) auto auto; align-items: center; gap: 10px; padding: 6px 9px; border-bottom: 1px solid var(--line); border-radius: var(--radius-sm); cursor: pointer; }
+.track-row:hover { background: color-mix(in srgb, var(--text-primary) 5%, transparent); }
+.drag-handle { width: 42px; height: 42px; display: grid; place-items: center; color: var(--text-secondary); touch-action: none; }
+.drag-handle svg { width: 19px; height: 19px; }
+.track-copy { min-width: 0; display: grid; gap: 3px; }
+.track-copy b, .track-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.track-copy small, .track-row time { color: var(--text-secondary); font-size: 11px; }
+.row-actions { display: flex; gap: 4px; }
+.row-actions button { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 50%; }
+.row-actions button:hover { background: var(--brand-soft); color: var(--brand); }
+.row-actions svg { width: 18px; height: 18px; }
+.sheet-actions { display: grid; gap: 7px; margin-top: 16px; }
+.sheet-actions button { min-height: 48px; display: flex; align-items: center; gap: 12px; padding: 0 14px; border-radius: 13px; background: var(--surface-2); text-align: left; }
+.sheet-actions button.danger { color: var(--danger); }
+.sheet-actions svg { width: 20px; height: 20px; }
+.save-strip { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 9px; margin-bottom: 18px; }
+.save-strip input { height: 44px; padding: 0 13px; }
+.save-strip button { display: flex; align-items: center; gap: 7px; padding: 0 15px; border-radius: 13px; background: var(--brand); color: #211713; font-weight: 700; }
+.save-strip svg { width: 18px; height: 18px; }
+.path-field { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; overflow: hidden; border: 1px solid var(--line); border-radius: 13px; background: var(--surface-1); }
+.path-field span { padding-left: 12px; color: var(--text-secondary); font-size: 12px; }
+.path-field input { height: 44px; padding: 0 10px 0 2px; border: 0; background: transparent; }
+.settings-card form > button { margin-top: 10px; }
+.setting-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.setting-row select, .zone-picker select { height: 42px; padding: 0 34px 0 12px; }

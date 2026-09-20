@@ -2,8 +2,10 @@
 """LAN-only Snapcast console and persistent MPD player API."""
 from __future__ import annotations
 
-import base64, binascii, hashlib, itertools, json, mimetypes, os, socket, threading, time
+import base64, binascii, hashlib, hmac, itertools, json, mimetypes, os, secrets, socket, threading, time
 import re
+from collections import defaultdict, deque
+from http.cookies import SimpleCookie
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -16,7 +18,7 @@ except ImportError:  # Optional in local tests; installed in the unified image.
     mutagen = None
 
 CONTROL_PORT = int(os.environ.get("CONTROL_PORT", "8080"))
-SNAPSERVER_RPC_URL = os.environ.get("SNAPSERVER_RPC_URL", "http://snapserver:1780/jsonrpc")
+SNAPSERVER_RPC_URL = os.environ.get("SNAPSERVER_RPC_URL", "http://127.0.0.1:1780/jsonrpc")
 MPD_SOCKET = os.environ.get("MPD_SOCKET", "/data/dlna/mpd.sock")
 STATIC_DIR = Path(__file__).with_name("static")
 LIBRARY_ROOT = Path(os.environ.get("LIBRARY_ROOT", "/media"))
@@ -27,10 +29,89 @@ SNAP_RPC_LOCK = threading.Lock()
 SNAP_RPC_TARGET = urlparse(SNAPSERVER_RPC_URL)
 SNAP_RPC_SOCKET: socket.socket | None = None
 SNAP_RPC_BUFFER = bytearray()
+AUTH_ENABLED = os.environ.get("CONTROL_AUTH_ENABLED", "true").strip().casefold() not in {"0", "false", "no", "off"}
+CONTROL_USERNAME = os.environ.get("CONTROL_USERNAME", "admin")
+CONTROL_PASSWORD = os.environ.get("CONTROL_PASSWORD", "")
+SESSION_TTL = max(300, int(os.environ.get("CONTROL_SESSION_TTL", "43200")))
+SESSION_COOKIE = "snaproom_session"
+AUTH_LOCK = threading.Lock()
+SESSIONS: dict[str, float] = {}
+LOGIN_ATTEMPTS: dict[str, deque[float]] = defaultdict(deque)
+LOGIN_WINDOW = 60
+LOGIN_LIMIT = 5
+MAX_ART_BYTES = 20 * 1024 * 1024
+MAX_LYRICS_BYTES = 3 * 1024 * 1024
+MAX_PLAYLIST_BYTES = 1024 * 1024
+PLAYLIST_SCAN_TTL = 60
+PLAYLIST_SCAN_LOCK = threading.Lock()
+PLAYLIST_SCAN_CACHE: tuple[float, list[dict[str, Any]]] = (0.0, [])
 
 
 class ControlError(RuntimeError):
     pass
+
+
+def auth_configured() -> bool:
+    return not AUTH_ENABLED or bool(CONTROL_USERNAME and CONTROL_PASSWORD)
+
+
+def login_allowed(address: str, now: float | None = None) -> tuple[bool, int]:
+    current = time.time() if now is None else now
+    with AUTH_LOCK:
+        attempts = LOGIN_ATTEMPTS[address]
+        while attempts and current - attempts[0] >= LOGIN_WINDOW:
+            attempts.popleft()
+        if len(attempts) >= LOGIN_LIMIT:
+            return False, max(1, int(LOGIN_WINDOW - (current - attempts[0])))
+        return True, 0
+
+
+def verify_credentials(username: Any, password: Any) -> bool:
+    username_matches = hmac.compare_digest(str(username), CONTROL_USERNAME)
+    password_matches = hmac.compare_digest(str(password), CONTROL_PASSWORD)
+    return auth_configured() and username_matches and password_matches
+
+
+def record_login_failure(address: str, now: float | None = None) -> None:
+    with AUTH_LOCK:
+        LOGIN_ATTEMPTS[address].append(time.time() if now is None else now)
+
+
+def create_session(address: str, now: float | None = None) -> str:
+    current = time.time() if now is None else now
+    token = secrets.token_urlsafe(32)
+    with AUTH_LOCK:
+        SESSIONS[token] = current + SESSION_TTL
+        LOGIN_ATTEMPTS.pop(address, None)
+        expired = [value for value, expiry in SESSIONS.items() if expiry <= current]
+        for value in expired:
+            SESSIONS.pop(value, None)
+    return token
+
+
+def session_token(cookie_header: str, now: float | None = None) -> str:
+    if not AUTH_ENABLED:
+        return "lan-mode"
+    try:
+        cookie = SimpleCookie()
+        cookie.load(cookie_header or "")
+        token = cookie[SESSION_COOKIE].value
+    except (KeyError, AttributeError):
+        return ""
+    current = time.time() if now is None else now
+    with AUTH_LOCK:
+        expiry = SESSIONS.get(token, 0)
+        if expiry <= current:
+            SESSIONS.pop(token, None)
+            return ""
+    return token
+
+
+def revoke_session(cookie_header: str) -> None:
+    token = session_token(cookie_header)
+    if token and token != "lan-mode":
+        with AUTH_LOCK:
+            SESSIONS.pop(token, None)
 
 
 def clamp_int(value: Any, minimum: int, maximum: int, field: str) -> int:
@@ -249,17 +330,36 @@ def import_playlist(name_value: Any, content: Any, overwrite: bool = True) -> di
     return {"name": name_text, "count": len(uris), "skipped": len(skipped), "skippedExamples": skipped[:5]}
 
 
+def read_limited(path: Path, limit: int, label: str) -> bytes:
+    try:
+        if path.stat().st_size > limit:
+            raise ControlError(f"{label}不能超过 {limit // (1024 * 1024)} MB")
+        with path.open("rb") as source:
+            data = source.read(limit + 1)
+    except ControlError:
+        raise
+    except OSError as exc:
+        raise ControlError(f"无法读取{label}：{exc}") from exc
+    if len(data) > limit:
+        raise ControlError(f"{label}不能超过 {limit // (1024 * 1024)} MB")
+    return data
+
+
 def decode_playlist_file(path: Path) -> str:
-    raw = path.read_bytes()
-    if len(raw) > 1024 * 1024:
-        raise ControlError("歌单文件不能超过 1 MB")
+    raw = read_limited(path, MAX_PLAYLIST_BYTES, "歌单文件")
     try:
         return raw.decode("utf-8-sig")
     except UnicodeDecodeError:
         return raw.decode("gb18030")
 
 
-def server_playlist_files() -> list[dict[str, Any]]:
+def server_playlist_files(force: bool = False) -> list[dict[str, Any]]:
+    global PLAYLIST_SCAN_CACHE
+    now = time.monotonic()
+    with PLAYLIST_SCAN_LOCK:
+        cached_at, cached = PLAYLIST_SCAN_CACHE
+        if not force and cached_at and now - cached_at < PLAYLIST_SCAN_TTL:
+            return [dict(item) for item in cached]
     root = LIBRARY_ROOT.resolve()
     result = []
     try:
@@ -277,7 +377,10 @@ def server_playlist_files() -> list[dict[str, Any]]:
                 break
     except OSError as exc:
         raise ControlError(f"无法扫描 FNOS 歌单：{exc}") from exc
-    return sorted(result, key=lambda item: item["hostPath"].casefold())
+    result = sorted(result, key=lambda item: item["hostPath"].casefold())
+    with PLAYLIST_SCAN_LOCK:
+        PLAYLIST_SCAN_CACHE = (now, [dict(item) for item in result])
+    return result
 
 
 def import_server_playlist(path_value: Any, name_value: Any = "") -> dict[str, Any]:
@@ -519,11 +622,13 @@ def media_art(uri: Any) -> tuple[bytes, str, str] | None:
         for suffix in (".jpg", ".jpeg", ".png", ".webp"):
             candidate = candidates.get(stem + suffix)
             if candidate:
-                data = candidate.read_bytes()
+                data = read_limited(candidate, MAX_ART_BYTES, "封面文件")
                 return data, mimetypes.guess_type(candidate.name)[0] or "image/jpeg", hashlib.sha1(data).hexdigest()
     result = embedded_art(path)
     if result:
         data, mime = result
+        if len(data) > MAX_ART_BYTES:
+            raise ControlError("内嵌封面不能超过 20 MB")
         return data, mime, hashlib.sha1(data).hexdigest()
     return None
 
@@ -577,13 +682,15 @@ def media_lyrics(uri: Any) -> dict[str, Any]:
     candidates = (path.with_suffix(".lrc"), path.with_suffix(".txt"), path.parent / "lyrics" / (path.stem + ".lrc"))
     for candidate in candidates:
         if candidate.is_file():
-            raw = candidate.read_bytes()
+            raw = read_limited(candidate, MAX_LYRICS_BYTES, "歌词文件")
             for encoding in ("utf-8-sig", "gb18030"):
                 try:
                     return {"source": candidate.name, **parse_lyrics(raw.decode(encoding))}
                 except UnicodeDecodeError:
                     continue
     text = embedded_lyrics(path)
+    if len(text.encode("utf-8")) > MAX_LYRICS_BYTES:
+        raise ControlError("内嵌歌词不能超过 3 MB")
     return {"source": "embedded" if text else "", **parse_lyrics(text)}
 
 
@@ -637,6 +744,7 @@ def player_state() -> dict[str, Any]:
         "audio": status.get("audio", ""), "repeat": status.get("repeat") == "1", "random": status.get("random") == "1",
         "single": status.get("single") == "1", "consume": status.get("consume") == "1",
         "updating": bool(status.get("updating_db")), "error": status.get("error", ""),
+        "sourceType": "mpd", "capabilities": source_capabilities("mpd"),
     }
 
 
@@ -681,9 +789,41 @@ def remote_stream_watchdog() -> None:
             print(f"MPD watchdog: {exc}", flush=True)
 
 
+def source_type(stream_id: Any) -> str:
+    return {"airplay": "airplay", "dlna": "mpd", "default": "auto"}.get(str(stream_id).strip().casefold(), "unknown")
+
+
+def source_capabilities(kind: str) -> dict[str, bool]:
+    controllable = kind == "mpd"
+    return {
+        "playPause": controllable,
+        "previous": controllable,
+        "next": controllable,
+        "seek": controllable,
+        "queue": controllable,
+    }
+
+
+def source_descriptor(stream: dict[str, Any], active_kind: str = "") -> dict[str, Any]:
+    kind = source_type(stream.get("id", ""))
+    effective = active_kind if kind == "auto" and active_kind else kind
+    return {
+        "id": stream.get("id", ""),
+        "name": stream.get("id", ""),
+        "status": stream.get("status", "idle"),
+        "format": stream.get("uri", {}).get("query", {}).get("sampleformat", ""),
+        "sourceType": kind,
+        "effectiveSourceType": effective,
+        "capabilities": source_capabilities(effective),
+    }
+
+
 def normalized_snapcast_state() -> dict[str, Any]:
     server = snap_rpc("Server.GetStatus")["server"]
-    streams = [{"id": s["id"], "status": s.get("status", "idle"), "format": s.get("uri", {}).get("query", {}).get("sampleformat", "")} for s in server.get("streams", [])]
+    raw_streams = server.get("streams", [])
+    active_kind = next((source_type(item.get("id")) for item in raw_streams if item.get("status") == "playing" and source_type(item.get("id")) != "auto"), "mpd")
+    streams = [source_descriptor(stream, active_kind) for stream in raw_streams]
+    streams_by_id = {stream["id"]: stream for stream in streams}
     groups = []
     for group in server.get("groups", []):
         clients = []
@@ -695,8 +835,30 @@ def normalized_snapcast_state() -> dict[str, Any]:
                 "volume": int(volume.get("percent", 0)), "muted": bool(volume.get("muted", False)),
                 "ip": client.get("host", {}).get("ip", "").replace("::ffff:", ""), "version": client.get("snapclient", {}).get("version", ""),
             })
-        groups.append({"id": group["id"], "name": group.get("name") or "播放组", "streamId": group.get("stream_id", ""), "muted": bool(group.get("muted", False)), "clients": clients})
+        stream_id = group.get("stream_id", "")
+        connected = [client for client in clients if client["connected"]]
+        source = streams_by_id.get(stream_id, source_descriptor({"id": stream_id}, active_kind))
+        groups.append({
+            "id": group["id"], "name": group.get("name") or "播放组", "streamId": stream_id,
+            "sourceType": source["effectiveSourceType"], "source": source,
+            "muted": bool(group.get("muted", False)),
+            "volume": round(sum(client["volume"] for client in connected) / len(connected)) if connected else 0,
+            "connectedCount": len(connected), "clients": clients,
+        })
     return {"streams": streams, "groups": groups}
+
+
+def set_zone_volume(group_id: Any, percent: Any, muted: bool = False) -> list[Any]:
+    identifier = str(group_id)
+    value = clamp_int(percent, 0, 100, "音量")
+    group = next((item for item in normalized_snapcast_state()["groups"] if item["id"] == identifier), None)
+    if group is None:
+        raise ControlError("播放区域不存在")
+    return [
+        snap_rpc("Client.SetVolume", {"id": client["id"], "volume": {"muted": muted, "percent": value}})
+        for client in group["clients"]
+        if client["connected"]
+    ]
 
 
 def combined_state() -> dict[str, Any]:
@@ -710,7 +872,7 @@ def combined_state() -> dict[str, Any]:
         player = {"available": True, **player_state()}
     except ControlError as exc:
         errors.append(str(exc))
-    return {"snapcast": snapcast, "player": player, "dlna": player, "errors": errors}
+    return {"snapcast": snapcast, "zones": snapcast.get("groups", []), "sources": snapcast.get("streams", []), "player": player, "dlna": player, "system": {"hostname": socket.gethostname()}, "errors": errors}
 
 
 def run_player_action(body: dict[str, Any]) -> Any:
@@ -770,6 +932,12 @@ def run_player_action(body: dict[str, Any]) -> Any:
                 mpd_command("play")
             return result
         return mpd_command(f"rm {name}")
+    if action == "playlist-play-position":
+        name = mpd_escape(playlist_name(body.get("name", "")), "歌单名称")
+        position = clamp_int(body.get("position"), 0, 100000, "歌单位置")
+        mpd_command("clear")
+        mpd_command(f"load {name}")
+        return mpd_command(f"play {position}")
     if action == "playlist-rename":
         old = mpd_escape(playlist_name(body.get("name", "")), "歌单名称")
         new = mpd_escape(playlist_name(body.get("newName", "")), "新歌单名称")
@@ -804,7 +972,7 @@ class Handler(BaseHTTPRequestHandler):
         if not request.startswith(("GET /api/state ", "GET /api/health ")):
             print(f"{self.address_string()} - {fmt % args}", flush=True)
 
-    def _headers(self, status: int, content_type: str, length: int, cache: str = "no-store", disposition: str = "") -> None:
+    def _headers(self, status: int, content_type: str, length: int, cache: str = "no-store", disposition: str = "", extra: dict[str, str] | None = None) -> None:
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(length))
@@ -815,11 +983,13 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("X-Frame-Options", "DENY")
         self.send_header("Referrer-Policy", "no-referrer")
         self.send_header("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:")
+        for name, value in (extra or {}).items():
+            self.send_header(name, value)
         self.end_headers()
 
-    def json_response(self, payload: Any, status: int = HTTPStatus.OK) -> None:
+    def json_response(self, payload: Any, status: int = HTTPStatus.OK, headers: dict[str, str] | None = None) -> None:
         body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode()
-        self._headers(status, "application/json; charset=utf-8", len(body))
+        self._headers(status, "application/json; charset=utf-8", len(body), extra=headers)
         self.wfile.write(body)
 
     def binary_response(self, body: bytes, content_type: str, cache: str = "private, max-age=3600", disposition: str = "") -> None:
@@ -846,10 +1016,23 @@ class Handler(BaseHTTPRequestHandler):
             clamp_int(params.get("limit", [60])[0], 1, 200, "limit"),
         )
 
+    def authenticated(self) -> bool:
+        return bool(session_token(self.headers.get("Cookie", "")))
+
+    def require_auth(self, path: str) -> bool:
+        if not path.startswith("/api/") or path in {"/api/health", "/api/auth", "/api/login"} or self.authenticated():
+            return True
+        self.json_response({"ok": False, "error": "需要登录"}, HTTPStatus.UNAUTHORIZED)
+        return False
+
     def do_GET(self) -> None:  # noqa: N802
         parsed_url = urlparse(self.path)
         path, params = parsed_url.path, parse_qs(parsed_url.query)
+        if not self.require_auth(path):
+            return
         try:
+            if path == "/api/auth":
+                self.json_response({"ok": True, "enabled": AUTH_ENABLED, "configured": auth_configured(), "authenticated": self.authenticated(), "username": CONTROL_USERNAME if AUTH_ENABLED else ""}); return
             if path == "/api/state":
                 self.json_response(combined_state()); return
             if path == "/api/health":
@@ -886,7 +1069,8 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/player/collections":
                 self.json_response({"ok": True, **player_collections()}); return
             if path == "/api/player/playlist-files":
-                self.json_response({"ok": True, "items": server_playlist_files()}); return
+                force = params.get("refresh", ["0"])[0] in {"1", "true"}
+                self.json_response({"ok": True, "items": server_playlist_files(force)}); return
             if path == "/api/mpd/library-config":
                 self.json_response({"ok": True, **library_config_state()}); return
         except ControlError as exc:
@@ -903,19 +1087,45 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_POST(self) -> None:  # noqa: N802
+        path = urlparse(self.path).path
+        if path == "/api/login":
+            try:
+                body = self.read_json()
+                if not AUTH_ENABLED:
+                    self.json_response({"ok": True, "enabled": False}); return
+                if not auth_configured():
+                    self.json_response({"ok": False, "error": "控制台认证尚未配置"}, HTTPStatus.SERVICE_UNAVAILABLE); return
+                allowed, retry_after = login_allowed(self.client_address[0])
+                if not allowed:
+                    self.json_response({"ok": False, "error": "登录尝试过于频繁"}, HTTPStatus.TOO_MANY_REQUESTS, {"Retry-After": str(retry_after)}); return
+                if not verify_credentials(body.get("username"), body.get("password")):
+                    record_login_failure(self.client_address[0])
+                    self.json_response({"ok": False, "error": "用户名或密码错误"}, HTTPStatus.UNAUTHORIZED); return
+                token = create_session(self.client_address[0])
+                cookie = f"{SESSION_COOKIE}={token}; Path=/; HttpOnly; SameSite=Strict; Max-Age={SESSION_TTL}"
+                self.json_response({"ok": True, "username": CONTROL_USERNAME}, headers={"Set-Cookie": cookie}); return
+            except ControlError as exc:
+                self.json_response({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST); return
+        if not self.require_auth(path):
+            return
+        if path == "/api/logout":
+            revoke_session(self.headers.get("Cookie", ""))
+            self.json_response({"ok": True}, headers={"Set-Cookie": f"{SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0"}); return
         try:
             body = self.read_json()
-            if self.path == "/api/player/action":
+            if path == "/api/player/action":
                 result = run_player_action(body)
-            elif self.path == "/api/player/library-config":
+            elif path == "/api/player/library-config":
                 result = save_library_path(body.get("path", ""))
-            elif self.path == "/api/snapcast/volume":
+            elif path == "/api/snapcast/volume":
                 result = snap_rpc("Client.SetVolume", {"id": str(body.get("clientId", "")), "volume": {"muted": bool(body.get("muted", False)), "percent": clamp_int(body.get("percent"), 0, 100, "音量")}})
-            elif self.path == "/api/snapcast/latency":
+            elif path == "/api/snapcast/latency":
                 result = snap_rpc("Client.SetLatency", {"id": str(body.get("clientId", "")), "latency": clamp_int(body.get("latency"), -1000, 5000, "延迟")})
-            elif self.path == "/api/snapcast/stream":
+            elif path == "/api/snapcast/group-volume":
+                result = set_zone_volume(body.get("groupId", ""), body.get("percent"), bool(body.get("muted", False)))
+            elif path == "/api/snapcast/stream":
                 result = snap_rpc("Group.SetStream", {"id": str(body.get("groupId", "")), "stream_id": str(body.get("streamId", ""))})
-            elif self.path == "/api/snapcast/all-stream":
+            elif path == "/api/snapcast/all-stream":
                 stream_id = str(body.get("streamId", ""))
                 result = [snap_rpc("Group.SetStream", {"id": group["id"], "stream_id": stream_id}) for group in normalized_snapcast_state()["groups"]]
             else:

@@ -1,0 +1,42 @@
+.zone-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 390px), 1fr)); align-items: start; gap: 16px; }
+.zone-card { min-width: 0; padding: 20px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface-1); box-shadow: 0 16px 40px rgb(40 24 16 / .06); backdrop-filter: blur(18px); }
+.zone-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.zone-head > div { min-width: 0; display: flex; align-items: center; gap: 11px; }
+.zone-head small { color: var(--brand); font-size: 9px; font-weight: 700; letter-spacing: .15em; }
+.zone-head h2 { margin: 1px 0 0; font-size: 24px; }
+.zone-online { flex: 0 0 auto; padding: 6px 9px; border-radius: 999px; background: var(--surface-2); color: var(--text-secondary); font-size: 10px; }
+.zone-now { display: grid; gap: 4px; margin: 18px 0; padding: 16px; border-radius: 14px; background: linear-gradient(135deg, var(--art-accent-soft), transparent); }
+.zone-now small { color: var(--art-accent); font-size: 9px; font-weight: 700; letter-spacing: .08em; }
+.zone-now b { font-size: 15px; }
+.zone-now span { overflow: hidden; color: var(--text-secondary); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.group-volume, .client-volume { display: grid; grid-template-columns: auto minmax(0, 1fr) 34px; align-items: center; gap: 11px; }
+.group-volume > span { display: flex; align-items: center; gap: 7px; white-space: nowrap; }
+.group-volume svg { width: 19px; height: 19px; }
+.group-volume output, .client-volume output { color: var(--text-secondary); font-size: 11px; text-align: right; }
+.zone-sources, .source-list { display: flex; flex-wrap: wrap; gap: 7px; margin: 16px 0; }
+.zone-sources button, .source-list button { min-height: 36px; display: flex; align-items: center; gap: 7px; padding: 0 12px; border: 1px solid var(--line); border-radius: 999px; color: var(--text-secondary); }
+.zone-sources button i, .source-list button i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.zone-sources button.active { border-color: color-mix(in srgb, var(--art-accent) 45%, transparent); background: var(--art-accent); color: var(--on-art-accent); }
+.zone-devices { margin-top: 8px; border-top: 1px solid var(--line); }
+.zone-devices > summary { min-height: 46px; display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--text-secondary); font-size: 11px; cursor: pointer; list-style: none; touch-action: manipulation; }
+.zone-devices > summary::-webkit-details-marker { display: none; }
+.zone-devices > summary span { display: flex; align-items: center; gap: 7px; }
+.zone-devices > summary svg { width: 17px; height: 17px; transition: transform .2s; }
+.zone-devices[open] > summary span:last-child svg { transform: rotate(180deg); }
+.client-list { display: grid; gap: 9px; }
+.client-row { padding: 13px; border: 1px solid var(--line); border-radius: 14px; background: color-mix(in srgb, var(--surface-2) 55%, transparent); }
+.client-row > header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.client-row > header > div { min-width: 0; display: grid; grid-template-columns: 8px minmax(0, 1fr); gap: 2px 8px; }
+.client-row > header .dot { grid-row: 1 / 3; align-self: center; }
+.client-row > header b, .client-row > header small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.client-row > header small { color: var(--text-secondary); font-size: 10px; }
+.client-row .icon-btn { width: 36px; height: 36px; flex-basis: 36px; }
+.client-volume { margin: 12px 0; }
+.client-volume > span { color: var(--text-secondary); font-size: 11px; }
+.latency-control { padding-top: 10px; border-top: 1px solid var(--line); }
+.latency-control > div { display: flex; justify-content: space-between; color: var(--text-secondary); font-size: 10px; }
+.latency-control > footer { display: grid; grid-template-columns: 40px 40px minmax(90px, 1fr) 40px; gap: 6px; }
+.latency-control > footer button { height: 40px; display: grid; place-items: center; border-radius: 11px; background: var(--surface-1); font-size: 18px; }
+.latency-control > footer label { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; border-radius: 11px; background: var(--surface-1); }
+.latency-control > footer input { width: 100%; height: 40px; padding: 0 4px 0 10px; border: 0; background: transparent; text-align: right; }
+.latency-control > footer label span { padding-right: 9px; color: var(--text-secondary); font-size: 10px; }

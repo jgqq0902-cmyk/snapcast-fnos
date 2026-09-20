@@ -10,6 +10,13 @@ services:
     restart: unless-stopped
     environment:
       TZ: Asia/Shanghai
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1001}
+      GATEWAY_IP: ${GATEWAY_IP:?copy .env.example to .env and set GATEWAY_IP}
+      CONTROL_AUTH_ENABLED: ${CONTROL_AUTH_ENABLED:-true}
+      CONTROL_USERNAME: ${CONTROL_USERNAME:-admin}
+      CONTROL_PASSWORD: ${CONTROL_PASSWORD:-}
+      CONTROL_SESSION_TTL: ${CONTROL_SESSION_TTL:-43200}
     volumes:
       - /vol1/1000/tools/snapcast/config:/app/config
       - /vol1/1000/tools/snapcast/data:/app/data
@@ -18,7 +25,7 @@ services:
     networks:
       audio_lan:
         interface_name: eth0
-        ipv4_address: 192.168.2.125
+        ipv4_address: ${GATEWAY_IP:?copy .env.example to .env and set GATEWAY_IP}
     healthcheck:
       test: ["CMD", "/bin/sh", "/app/unified/healthcheck.sh"]
       interval: 10s
@@ -30,8 +37,8 @@ networks:
   audio_lan:
     driver: macvlan
     driver_opts:
-      parent: eno2-ovs
+      parent: ${MACVLAN_PARENT:?set MACVLAN_PARENT in .env}
     ipam:
       config:
-        - subnet: 192.168.2.0/24
-          gateway: 192.168.2.8
+        - subnet: ${LAN_SUBNET:?set LAN_SUBNET in .env}
+          gateway: ${LAN_GATEWAY:?set LAN_GATEWAY in .env}

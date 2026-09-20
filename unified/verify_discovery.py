@@ -4,13 +4,16 @@
 from __future__ import annotations
 
 import re
+import os
 import socket
 import struct
 import time
 import urllib.request
 
 
-TARGET_IP = "192.168.2.125"
+TARGET_IP = os.environ.get("GATEWAY_IP", "")
+if not TARGET_IP:
+    raise SystemExit("set GATEWAY_IP before running discovery verification")
 
 
 def lan_interface_ip() -> str:
@@ -45,8 +48,8 @@ def verify_airplay() -> None:
         responses = receive_until(sock, time.monotonic() + 3)
     combined = b"\n".join(data for data, _ in responses)
     assert b"Snapcast-AirPlay" in combined, "AirPlay RAOP service was not found"
-    assert socket.inet_aton(TARGET_IP) in combined, "AirPlay service did not resolve to .125"
-    print("AirPlay mDNS: Snapcast-AirPlay -> 192.168.2.125")
+    assert socket.inet_aton(TARGET_IP) in combined, f"AirPlay service did not resolve to {TARGET_IP}"
+    print(f"AirPlay mDNS: Snapcast-AirPlay -> {TARGET_IP}")
 
 
 def verify_dlna() -> None:

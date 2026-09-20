@@ -1,0 +1,21 @@
+:root { --player-height: 0px; }
+.device-shell { padding-bottom: 0; }
+.device-shell .sidebar { bottom: 0; }
+.nav-link { min-height: 46px; display: grid; grid-template-columns: 24px minmax(0, 1fr) 18px; align-items: center; gap: 12px; padding: 0 12px; border-radius: 13px; color: var(--text-secondary); text-decoration: none; }
+.nav-link:hover { background: var(--surface-2); color: var(--text-primary); }
+.nav-link > svg { width: 22px; height: 22px; }
+.nav-link .nav-arrow { width: 16px; height: 16px; opacity: .6; }
+.header-actions { display: flex; align-items: center; gap: 10px; }
+.header-actions .accent-btn { text-decoration: none; white-space: nowrap; }
+.settings-card > .accent-btn { margin-top: 14px; text-decoration: none; }
+@media (max-width: 720px) {
+  :root { --player-height: 0px; }
+  .device-shell { padding-bottom: calc(62px + env(safe-area-inset-bottom)); }
+  .device-shell .sidebar { bottom: 0; }
+  .primary-nav { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .primary-nav .nav-link { min-height: 54px; display: flex; flex-direction: column; justify-content: center; gap: 2px; padding: 4px; font-size: 11px; }
+  .primary-nav .nav-link > svg { width: 22px; height: 22px; }
+  .primary-nav .nav-link .nav-arrow { display: none; }
+  .header-actions .accent-btn { width: 42px; min-width: 42px; padding: 0; font-size: 0; }
+  .header-actions .accent-btn svg { width: 22px; height: 22px; }
+}
