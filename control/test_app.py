@@ -240,16 +240,47 @@ class ControlHelpersTest(unittest.TestCase):
             state = normalized_snapcast_state()
         self.assertEqual([(group["id"], group["streamId"]) for group in state["groups"]], [("g1", "Airplay"), ("g2", "DLNA")])
 
-    def test_zone_volume_only_updates_connected_clients_in_target_zone(self):
+    def test_snapcast_group_volume_tracks_loudest_connected_client(self):
+        server = {"server": {"streams": [], "groups": [{
+            "id": "g1", "stream_id": "Default", "clients": [
+                {"id": "a", "connected": True, "config": {"volume": {"percent": 80, "muted": False}}},
+                {"id": "b", "connected": True, "config": {"volume": {"percent": 40, "muted": False}}},
+                {"id": "offline", "connected": False, "config": {"volume": {"percent": 100, "muted": False}}},
+            ],
+        }]}}
+        with patch("app.snap_rpc", return_value=server):
+            state = normalized_snapcast_state()
+        self.assertEqual(state["groups"][0]["volume"], 80)
+
+    def test_zone_volume_scales_connected_clients_proportionally(self):
         zones = {
             "groups": [
-                {"id": "g1", "clients": [{"id": "a", "connected": True}, {"id": "b", "connected": False}]},
-                {"id": "g2", "clients": [{"id": "c", "connected": True}]},
+                {"id": "g1", "clients": [
+                    {"id": "a", "connected": True, "volume": 80},
+                    {"id": "b", "connected": True, "volume": 40},
+                    {"id": "offline", "connected": False, "volume": 60},
+                ]},
+                {"id": "g2", "clients": [{"id": "c", "connected": True, "volume": 90}]},
             ]
         }
         with patch("app.normalized_snapcast_state", return_value=zones), patch("app.snap_rpc", return_value={}) as rpc:
-            set_zone_volume("g1", 42)
-        rpc.assert_called_once_with("Client.SetVolume", {"id": "a", "volume": {"muted": False, "percent": 42}})
+            set_zone_volume("g1", 50)
+        self.assertEqual(
+            [call.args for call in rpc.call_args_list],
+            [
+                ("Client.SetVolume", {"id": "a", "volume": {"muted": False, "percent": 50}}),
+                ("Client.SetVolume", {"id": "b", "volume": {"muted": False, "percent": 25}}),
+            ],
+        )
+
+    def test_zone_volume_from_silence_sets_connected_clients_to_requested_level(self):
+        zones = {"groups": [{"id": "g1", "clients": [
+            {"id": "a", "connected": True, "volume": 0},
+            {"id": "b", "connected": True, "volume": 0},
+        ]}]}
+        with patch("app.normalized_snapcast_state", return_value=zones), patch("app.snap_rpc", return_value={}) as rpc:
+            set_zone_volume("g1", 30)
+        self.assertEqual([call.args[1]["volume"]["percent"] for call in rpc.call_args_list], [30, 30])
 
     @staticmethod
     def snap_state(groups, streams=None):

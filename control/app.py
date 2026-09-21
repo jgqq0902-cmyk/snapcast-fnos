@@ -844,7 +844,7 @@ def normalized_snapcast_state() -> dict[str, Any]:
             "id": group["id"], "name": group.get("name") or "播放组", "streamId": stream_id,
             "sourceType": source["effectiveSourceType"], "source": source,
             "muted": bool(group.get("muted", False)),
-            "volume": round(sum(client["volume"] for client in connected) / len(connected)) if connected else 0,
+            "volume": max((client["volume"] for client in connected), default=0),
             "connectedCount": len(connected), "clients": clients,
         })
     return {"streams": streams, "groups": groups}
@@ -856,10 +856,17 @@ def set_zone_volume(group_id: Any, percent: Any, muted: bool = False) -> list[An
     group = next((item for item in normalized_snapcast_state()["groups"] if item["id"] == identifier), None)
     if group is None:
         raise ControlError("播放区域不存在")
+    connected = [client for client in group["clients"] if client["connected"]]
+    peak = max((client["volume"] for client in connected), default=0)
     return [
-        snap_rpc("Client.SetVolume", {"id": client["id"], "volume": {"muted": muted, "percent": value}})
-        for client in group["clients"]
-        if client["connected"]
+        snap_rpc("Client.SetVolume", {
+            "id": client["id"],
+            "volume": {
+                "muted": muted,
+                "percent": value if peak == 0 else min(100, int(client["volume"] * value / peak + 0.5)),
+            },
+        })
+        for client in connected
     ]
 
 
