@@ -1,7 +1,8 @@
 export class ApiError extends Error {
-  constructor(message, status = 0) {
+  constructor(message, status = 0, details = null) {
     super(message);
     this.status = status;
+    this.details = details;
   }
 }
 
@@ -13,7 +14,7 @@ export async function request(url, options = {}) {
     document.dispatchEvent(new CustomEvent("auth-required"));
   }
   if (!response.ok || data?.ok === false) {
-    throw new ApiError(data?.error || `HTTP ${response.status}`, response.status);
+    throw new ApiError(data?.error || `HTTP ${response.status}`, response.status, typeof data === "object" ? data : null);
   }
   return data;
 }

@@ -37,28 +37,9 @@
 .player-toolbar > div { display: flex; align-items: center; gap: 10px; }
 .player-toolbar p { margin: 0; color: var(--brand); font-size: 9px; font-weight: 800; letter-spacing: .16em; }
 .player-toolbar strong { font-size: 15px; }
+.player-back { display: none; }
 .player-frame-shell { position: relative; min-height: 0; overflow: hidden; background: var(--surface-solid); }
 .player-frame-shell iframe { width: 100%; height: 100%; display: block; border: 0; background: var(--surface-solid); }
 .player-frame-placeholder { position: absolute; z-index: 2; inset: 0; display: grid; place-content: center; justify-items: center; gap: 5px; background: var(--surface-solid); color: var(--text-secondary); }
 .player-frame-placeholder b { color: var(--text-primary); font-family: "Iowan Old Style", "Songti SC", serif; font-size: 25px; font-weight: 500; }
 .player-frame-placeholder.hidden { pointer-events: none; opacity: 0; transition: opacity .25s ease; }
-
-@media (max-width: 700px) {
-  .page-header { align-items: flex-start; }
-  .header-actions { flex-wrap: wrap; justify-content: flex-end; }
-  .header-actions .secondary-btn span { display: none; }
-  .header-actions .secondary-btn { width: 42px; padding: 0; }
-  .stop-all-btn { padding: 0 12px; }
-  .group-admin-clients, .client-options { grid-template-columns: 1fr; }
-  .group-admin-row > footer { display: grid; grid-template-columns: 1fr 1fr; }
-  .group-admin-row > footer button { padding-inline: 9px; }
-  .player-mode .workspace { height: calc(100vh - 62px - env(safe-area-inset-bottom)); padding: 0; }
-  .player-toolbar { height: 54px; padding: 6px 10px; }
-  .player-toolbar .secondary-btn { width: 42px; padding: 0; }
-  .player-toolbar .secondary-btn span, .player-toolbar p { display: none; }
-}
-
-@media (max-width: 400px) {
-  .stop-all-btn span { display: none; }
-  .stop-all-btn { width: 42px; padding: 0; }
-}

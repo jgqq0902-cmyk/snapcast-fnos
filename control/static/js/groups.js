@@ -28,7 +28,13 @@ async function submit(endpoint, payload, button) {
     toast("播放组已更新");
     return true;
   } catch (error) {
-    toast(error.message, true, 5000);
+    if (error.details?.partialMutation) {
+      document.dispatchEvent(new CustomEvent("state-refresh"));
+      const rollback = error.details.rollbackErrors?.length ? `；回滚异常：${error.details.rollbackErrors.join("、")}` : "；已尝试恢复原分组";
+      toast(`${error.message}${rollback}`, true, 8000);
+    } else {
+      toast(error.message, true, 5000);
+    }
     return false;
   } finally {
     locked(button, false);

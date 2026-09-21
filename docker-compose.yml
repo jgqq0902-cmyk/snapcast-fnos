@@ -20,6 +20,9 @@ services:
       WEB_PORT: ${WEB_PORT:-1781}
       CONTROL_INTERNAL_PORT: ${CONTROL_INTERNAL_PORT:-1783}
       MYMPD_INTERNAL_PORT: ${MYMPD_INTERNAL_PORT:-1782}
+      WEB_TLS_ENABLED: ${WEB_TLS_ENABLED:-false}
+      TLS_CERT: ${TLS_CERT:-/app/certs/fullchain.pem}
+      TLS_KEY: ${TLS_KEY:-/app/certs/privkey.pem}
     volumes:
       - ${CONFIG_DIR:-./config}:/app/config
       - ${DATA_DIR:-./data}:/app/data

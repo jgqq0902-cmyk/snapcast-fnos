@@ -20,7 +20,7 @@ RUN chmod 0755 /app/unified/entrypoint.sh /app/unified/healthcheck.sh \
         /app/unified/mympd-init.sh \
         /app/unified/shairport-entrypoint.sh /app/unified/snapserver-entrypoint.sh \
         /app/unified/upmpdcli-entrypoint.sh /app/unified/smoke-test.sh \
-        /app/unified/verify_discovery.py \
+        /app/unified/verify_discovery.py /app/unified/gateway-integration-test.py \
     && chmod -R a+rX /app/control /app/unified
 
 USER root

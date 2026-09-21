@@ -37,12 +37,36 @@ chown -R snapcast:snapcast /app/data/nginx
 web_port=${WEB_PORT:-1781}
 control_port=${CONTROL_INTERNAL_PORT:-1783}
 mympd_port=${MYMPD_INTERNAL_PORT:-1782}
+tls_enabled=${WEB_TLS_ENABLED:-false}
 case "$web_port:$control_port:$mympd_port" in
     *[!0-9:]*|:*|*:) echo "WEB_PORT, CONTROL_INTERNAL_PORT and MYMPD_INTERNAL_PORT must be numeric" >&2; exit 1 ;;
+esac
+tls_listen=""
+tls_cert_line=""
+tls_key_line=""
+tls_protocols_line=""
+case "$tls_enabled" in
+    true|True|TRUE|1|yes|on)
+        tls_cert=${TLS_CERT:-/app/certs/fullchain.pem}
+        tls_key=${TLS_KEY:-/app/certs/privkey.pem}
+        [ -r "$tls_cert" ] || { echo "TLS certificate is not readable: $tls_cert" >&2; exit 1; }
+        [ -r "$tls_key" ] || { echo "TLS private key is not readable: $tls_key" >&2; exit 1; }
+        tls_listen=" ssl"
+        tls_cert_line="        ssl_certificate $tls_cert;"
+        tls_key_line="        ssl_certificate_key $tls_key;"
+        tls_protocols_line="        ssl_protocols TLSv1.2 TLSv1.3;"
+        export CONTROL_SECURE_COOKIE=true
+        ;;
+    false|False|FALSE|0|no|off) export CONTROL_SECURE_COOKIE=false ;;
+    *) echo "WEB_TLS_ENABLED must be true or false" >&2; exit 1 ;;
 esac
 sed -e "s/__WEB_PORT__/$web_port/g" \
     -e "s/__CONTROL_PORT__/$control_port/g" \
     -e "s/__MYMPD_PORT__/$mympd_port/g" \
+    -e "s/__TLS_LISTEN__/$tls_listen/g" \
+    -e "s#__TLS_CERT__#$tls_cert_line#g" \
+    -e "s#__TLS_KEY__#$tls_key_line#g" \
+    -e "s#__TLS_PROTOCOLS__#$tls_protocols_line#g" \
     /app/unified/nginx.conf > /app/data/nginx.conf
 chown snapcast:snapcast /app/data/nginx.conf
 

@@ -56,5 +56,6 @@ assert_listener "$mympd_port" 0100007F
 wget -qO- "http://127.0.0.1:$web_port/api/health" >/dev/null || fail "public health check failed"
 wget -qO- "http://127.0.0.1:$mympd_port/" >/dev/null || fail "internal myMPD web check failed"
 printf 'ping\nclose\n' | nc -w 2 127.0.0.1 6600 | grep -q '^OK' || fail "MPD command socket failed"
+/app/unified/gateway-integration-test.py || fail "authenticated myMPD gateway integration failed"
 
-echo "PASS: processes, privileges, loopback boundaries, web gateway and MPD are healthy"
+echo "PASS: processes, privileges, loopback boundaries, authenticated myMPD gateway and MPD are healthy"

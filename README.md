@@ -1,6 +1,6 @@
-# snapcast-fnos
+# Snap / Room
 
-面向 FNOS 的单容器多房间音频网关。镜像内集成 Snapserver、AirPlay 1、DLNA Media Renderer、MPD、myMPD 播放器和精简设备控制台。
+面向 FNOS 与通用 Docker 主机的单容器多房间音频网关，Powered by Snapcast。镜像内集成 Snapserver、AirPlay 1、DLNA Media Renderer、MPD、myMPD 播放器和精简设备控制台。
 
 ## 能力与边界
 
@@ -26,6 +26,16 @@
 | Snapserver TCP control | `127.0.0.1:1705` | 仅容器内部 |
 
 1780 和 1705 不再对 LAN 开放，避免绕过 Web 控制台鉴权。旧 Snapweb 因此不再作为外部入口；统一入口是 1781。仅在完全可信且隔离的家庭 LAN 中，才可将 `CONTROL_AUTH_ENABLED=false`。
+
+登录在 nginx 按真实客户端地址限流，Control 只在 TCP 对端为 loopback 时信任 `X-Real-IP`。默认使用 HTTP，适合隔离的家庭 LAN；如网络包含访客或不可信设备，可将证书放入 `CERTS_DIR` 并设置：
+
+```env
+WEB_TLS_ENABLED=true
+TLS_CERT=/app/certs/fullchain.pem
+TLS_KEY=/app/certs/privkey.pem
+```
+
+启用后统一入口使用 `https://<网关地址>:1781/`，会话 Cookie 自动增加 `Secure`。
 
 ## 首次部署
 
@@ -54,6 +64,8 @@ cp snapserver.conf config/snapserver.conf
 docker compose up -d --wait --wait-timeout 180
 docker exec snapcast /app/unified/smoke-test.sh
 ```
+
+冒烟测试包含未认证拦截、登录、myMPD 静态资源、WebSocket Upgrade 和退出后会话失效的完整生产代理链验证。
 
 `MEDIA_ROOT` 会只读挂载为容器内 `/media`。控制台和播放器不会修改音乐文件。持久化目录 `config/`、`data/`、`certs/`、`.env` 均已从 Git 排除。
 
@@ -125,7 +137,7 @@ docker compose up -d --remove-orphans --wait --wait-timeout 180
 
 ## Web 结构
 
-1781 控制台采用原生 ES Modules，默认进入设备页，负责 Snapcast 音源、音量、静音、延迟、设备重命名与播放组管理：
+1781 的 Snap / Room 控制台采用原生 ES Modules，默认进入设备页，负责 Snapcast 音源、音量、静音、延迟、设备重命名与播放组管理：
 
 - `control/static/js/`：API、状态、设备、播放组与通用 UI
 - `control/static/styles/`：令牌、基础、布局、设备卡片与响应式样式
