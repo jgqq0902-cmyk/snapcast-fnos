@@ -7,9 +7,9 @@ RUN apk add --no-cache \
         --repository=https://mirrors.tuna.tsinghua.edu.cn/alpine/edge/community \
         mpd=0.24.15-r0 \
         mympd=25.3.0-r0 \
-        py3-mutagen=1.48.0-r0 \
+        nginx=1.30.4-r3 \
         upmpdcli=1.9.17-r1 \
-    && apk info -v mpd mympd py3-mutagen upmpdcli
+    && apk info -v mpd mympd nginx upmpdcli
 
 COPY unified /app/unified
 COPY control/app.py /app/control/app.py
@@ -17,9 +17,10 @@ COPY control/static /app/control/static
 
 RUN chmod 0755 /app/unified/entrypoint.sh /app/unified/healthcheck.sh \
         /app/unified/drop-airplay-session.sh \
+        /app/unified/mympd-init.sh \
         /app/unified/shairport-entrypoint.sh /app/unified/snapserver-entrypoint.sh \
         /app/unified/upmpdcli-entrypoint.sh /app/unified/smoke-test.sh \
-        /app/unified/verify_discovery.py /app/unified/verify_upnp_next.py \
+        /app/unified/verify_discovery.py \
     && chmod -R a+rX /app/control /app/unified
 
 USER root

@@ -37,7 +37,7 @@ assert_matching_process_user() {
     done
 }
 
-for process in snapserver dbus-daemon avahi-daemon shairport-sync mpd mympd upmpdcli; do
+for process in snapserver dbus-daemon avahi-daemon shairport-sync mpd mympd upmpdcli nginx; do
     assert_process_user "$process"
 done
 assert_matching_process_user control '/app/control/app.py'
@@ -46,11 +46,15 @@ assert_matching_process_user control '/app/control/app.py'
 assert_listener 1704 00000000
 assert_listener 1705 0100007F
 assert_listener 1780 0100007F
-assert_listener 1781 00000000
-assert_listener 1782 00000000
+web_port=${WEB_PORT:-1781}
+control_port=${CONTROL_INTERNAL_PORT:-1783}
+mympd_port=${MYMPD_INTERNAL_PORT:-1782}
+assert_listener "$web_port" 00000000
+assert_listener "$control_port" 0100007F
+assert_listener "$mympd_port" 0100007F
 
-wget -qO- http://127.0.0.1:1781/api/health >/dev/null || fail "control API health check failed"
-wget -qO- http://127.0.0.1:1782/ >/dev/null || fail "myMPD web check failed"
+wget -qO- "http://127.0.0.1:$web_port/api/health" >/dev/null || fail "public health check failed"
+wget -qO- "http://127.0.0.1:$mympd_port/" >/dev/null || fail "internal myMPD web check failed"
 printf 'ping\nclose\n' | nc -w 2 127.0.0.1 6600 | grep -q '^OK' || fail "MPD command socket failed"
 
-echo "PASS: processes, privileges, listeners, control API and MPD are healthy"
+echo "PASS: processes, privileges, loopback boundaries, web gateway and MPD are healthy"

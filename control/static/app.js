@@ -6,17 +6,18 @@ import { renderZones } from "./js/zones.js";
 
 let pollTimer;
 let bootstrapped = false;
+let pendingRoute = "devices";
 
 async function start() {
   initTheme();
   setPlayerLinks();
   initEvents();
   initGroups();
-  await checkAuth();
+  if (await checkAuth()) navigate(pendingRoute);
 }
 
 function setPlayerLinks() {
-  const url = `${location.protocol}//${location.hostname}:1782/`;
+  const url = new URL("/player/", location.href).href;
   ["#openPlayerWindow", "#settingsPlayerLink"].forEach(selector => { $(selector).href = url; });
   $("#mympdFrame").dataset.src = url;
 }
@@ -30,14 +31,16 @@ async function checkAuth() {
     if (state.auth.enabled && (!state.auth.configured || !state.auth.authenticated)) {
       if (!state.auth.configured) $("#loginHint").textContent = "服务端尚未设置 CONTROL_PASSWORD，请先完成部署配置。";
       openLogin();
-      return;
+      return false;
     }
     closeDialog("#loginDialog");
     bootstrapped = true;
     await refreshState();
     startPolling();
+    return true;
   } catch (error) {
     toast(error.message, true);
+    return false;
   }
 }
 
@@ -82,6 +85,7 @@ async function refreshState() {
 
 function navigate(route) {
   if (!["devices", "player", "settings"].includes(route)) route = "devices";
+  pendingRoute = route;
   $$('[data-route]').forEach(button => button.classList.toggle("active", button.dataset.route === route));
   $$('[data-page]').forEach(page => page.classList.toggle("active", page.dataset.page === route));
   document.body.classList.toggle("player-mode", route === "player");
@@ -91,7 +95,7 @@ function navigate(route) {
 
 function loadPlayer(force = false) {
   const frame = $("#mympdFrame");
-  if (!frame.dataset.src) return;
+  if (!bootstrapped || !state.auth.authenticated || !frame.dataset.src) return;
   if (force || !frame.hasAttribute("src")) {
     $("#playerPlaceholder").classList.remove("hidden");
     frame.src = frame.dataset.src;
@@ -103,7 +107,7 @@ function initEvents() {
   document.addEventListener("state-refresh", refreshState);
   document.addEventListener("click", event => {
     const route = event.target.closest("[data-route]");
-    if (route) navigate(route.dataset.route);
+    if (route && bootstrapped) navigate(route.dataset.route);
     const close = event.target.closest("[data-close-dialog]");
     if (close) closeDialog(close.closest("dialog"));
   });
@@ -114,7 +118,7 @@ function initEvents() {
   $("#stopAllSources").onclick = stopAllSources;
   $("#logoutButton").onclick = logout;
   $("#themeSelect").onchange = event => setTheme(event.target.value);
-  navigate(["player", "settings"].includes(location.hash.slice(1)) ? location.hash.slice(1) : "devices");
+  pendingRoute = ["player", "settings"].includes(location.hash.slice(1)) ? location.hash.slice(1) : "devices";
 }
 
 async function stopAllSources() {
@@ -141,6 +145,7 @@ async function logout() {
   try { await post("/api/logout", {}); } catch {}
   state.auth.authenticated = false;
   bootstrapped = false;
+  $("#mympdFrame").removeAttribute("src");
   clearInterval(pollTimer);
   openLogin();
 }

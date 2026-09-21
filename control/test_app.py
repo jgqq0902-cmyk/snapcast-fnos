@@ -366,7 +366,7 @@ class AuthHttpTest(unittest.TestCase):
         )
         self.settings.start()
         self.state = patch.object(app_module, "combined_state", return_value={"snapcast": {}, "player": {}, "errors": []})
-        self.state.start()
+        self.state_mock = self.state.start()
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
@@ -399,8 +399,21 @@ class AuthHttpTest(unittest.TestCase):
 
     def test_api_rejects_unauthenticated_post(self):
         with self.assertRaises(urllib.error.HTTPError) as error:
-            self.request("/api/player/action", {"action": "stop"})
+            self.request("/api/sources/stop-all", {})
         self.assertEqual(error.exception.code, 401)
+
+    def test_health_uses_cached_snapshot_without_live_state_calls(self):
+        with patch.object(app_module, "HEALTH_STATE", {"ok": True, "updatedAt": 1, "components": {"mpd": True}}):
+            payload = json.load(self.request("/api/health"))
+        self.assertTrue(payload["ok"])
+        self.state_mock.assert_not_called()
+
+    def test_session_check_requires_and_accepts_console_session(self):
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            self.request("/api/session-check")
+        self.assertEqual(error.exception.code, 401)
+        self.request("/api/login", {"username": "admin", "password": "correct-password"}, self.opener)
+        self.assertEqual(self.request("/api/session-check", opener=self.opener).status, 204)
 
     def test_unconfigured_auth_does_not_allow_login(self):
         with patch.object(app_module, "CONTROL_PASSWORD", ""):
@@ -444,10 +457,11 @@ class AuthHttpTest(unittest.TestCase):
         self.assertEqual(response.status, 200)
         self.assertIn("javascript", response.headers["Content-Type"])
         index_response = self.request("/")
-        self.assertIn("frame-src http://*:1782", index_response.headers["Content-Security-Policy"])
+        self.assertIn("frame-src 'self'", index_response.headers["Content-Security-Policy"])
         index = index_response.read().decode("utf-8")
         self.assertIn("设备", index)
-        self.assertIn(":1782/", index)
+        self.assertIn('href="/player/"', index)
+        self.assertNotIn("192.168.", index)
         self.assertIn('data-page="player"', index)
         self.assertNotIn('data-page="music"', index)
         self.assertNotIn('data-page="queue"', index)

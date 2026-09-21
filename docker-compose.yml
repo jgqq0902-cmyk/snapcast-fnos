@@ -3,9 +3,9 @@ services:
     build:
       context: .
       dockerfile: unified/Dockerfile
-    image: snapcast-all-in-one:local
-    container_name: snapcast
-    hostname: snapcast-gateway
+    image: ${SNAPCAST_IMAGE:-snapcast-all-in-one:local}
+    container_name: ${CONTAINER_NAME:-snapcast}
+    hostname: ${GATEWAY_HOSTNAME:-snapcast-gateway}
     user: "0:0"
     restart: unless-stopped
     environment:
@@ -17,11 +17,14 @@ services:
       CONTROL_USERNAME: ${CONTROL_USERNAME:-admin}
       CONTROL_PASSWORD: ${CONTROL_PASSWORD:-}
       CONTROL_SESSION_TTL: ${CONTROL_SESSION_TTL:-43200}
+      WEB_PORT: ${WEB_PORT:-1781}
+      CONTROL_INTERNAL_PORT: ${CONTROL_INTERNAL_PORT:-1783}
+      MYMPD_INTERNAL_PORT: ${MYMPD_INTERNAL_PORT:-1782}
     volumes:
-      - /vol1/1000/tools/snapcast/config:/app/config
-      - /vol1/1000/tools/snapcast/data:/app/data
-      - /vol1/1000/tools/snapcast/certs:/app/certs
-      - /vol1/1000:/media:ro
+      - ${CONFIG_DIR:-./config}:/app/config
+      - ${DATA_DIR:-./data}:/app/data
+      - ${CERTS_DIR:-./certs}:/app/certs
+      - ${MEDIA_ROOT:-/vol1/1000}:/media:ro
     networks:
       audio_lan:
         interface_name: eth0

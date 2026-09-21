@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""LAN-only Snapcast console and persistent MPD player API."""
+"""Authenticated Snapcast device console with a minimal MPD status bridge."""
 from __future__ import annotations
 
-import base64, binascii, hashlib, hmac, itertools, json, mimetypes, os, secrets, socket, subprocess, threading, time
-import re
+import base64, binascii, hashlib, hmac, itertools, json, mimetypes, os, re, secrets, socket, subprocess, threading, time
 from collections import defaultdict, deque
 from http.cookies import SimpleCookie
 from http import HTTPStatus
@@ -12,18 +11,23 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
-try:
-    import mutagen
-except ImportError:  # Optional in local tests; installed in the unified image.
-    mutagen = None
-
 CONTROL_PORT = int(os.environ.get("CONTROL_PORT", "8080"))
+CONTROL_HOST = os.environ.get("CONTROL_HOST", "127.0.0.1")
 SNAPSERVER_RPC_URL = os.environ.get("SNAPSERVER_RPC_URL", "http://127.0.0.1:1780/jsonrpc")
+SNAPSERVER_RPC_PORT = int(os.environ.get("SNAPSERVER_RPC_PORT", "1705"))
 MPD_SOCKET = os.environ.get("MPD_SOCKET", "/data/dlna/mpd.sock")
 STATIC_DIR = Path(__file__).with_name("static")
+# Legacy helper constants remain temporarily for import compatibility; their
+# HTTP routes are retired and myMPD owns all library/playlist operations.
 LIBRARY_ROOT = Path(os.environ.get("LIBRARY_ROOT", "/media"))
 LIBRARY_LINK = Path(os.environ.get("LIBRARY_LINK", "/app/data/dlna/library"))
 LIBRARY_CONFIG = Path(os.environ.get("LIBRARY_CONFIG", "/app/data/dlna/library.json"))
+MAX_ART_BYTES = 20 * 1024 * 1024
+MAX_LYRICS_BYTES = 3 * 1024 * 1024
+MAX_PLAYLIST_BYTES = 1024 * 1024
+PLAYLIST_SCAN_TTL = 60
+PLAYLIST_SCAN_LOCK = threading.Lock()
+PLAYLIST_SCAN_CACHE: tuple[float, list[dict[str, Any]]] = (0.0, [])
 RPC_IDS = itertools.count(1)
 SNAP_RPC_LOCK = threading.Lock()
 GROUP_MUTATION_LOCK = threading.Lock()
@@ -40,13 +44,10 @@ SESSIONS: dict[str, float] = {}
 LOGIN_ATTEMPTS: dict[str, deque[float]] = defaultdict(deque)
 LOGIN_WINDOW = 60
 LOGIN_LIMIT = 5
-MAX_ART_BYTES = 20 * 1024 * 1024
-MAX_LYRICS_BYTES = 3 * 1024 * 1024
-MAX_PLAYLIST_BYTES = 1024 * 1024
-PLAYLIST_SCAN_TTL = 60
-PLAYLIST_SCAN_LOCK = threading.Lock()
-PLAYLIST_SCAN_CACHE: tuple[float, list[dict[str, Any]]] = (0.0, [])
 AIRPLAY_STOP_HELPER = os.environ.get("AIRPLAY_STOP_HELPER", "/app/unified/drop-airplay-session.sh")
+HEALTH_INTERVAL = max(2, int(os.environ.get("HEALTH_INTERVAL", "5")))
+HEALTH_LOCK = threading.Lock()
+HEALTH_STATE: dict[str, Any] = {"ok": False, "updatedAt": 0, "components": {}}
 
 
 class ControlError(RuntimeError):
@@ -134,7 +135,7 @@ def snap_rpc(method: str, params: dict[str, Any] | None = None) -> Any:
         for attempt in range(2):
             try:
                 if SNAP_RPC_SOCKET is None:
-                    SNAP_RPC_SOCKET = socket.create_connection((SNAP_RPC_TARGET.hostname or "127.0.0.1", 1705), timeout=3)
+                    SNAP_RPC_SOCKET = socket.create_connection((SNAP_RPC_TARGET.hostname or "127.0.0.1", SNAPSERVER_RPC_PORT), timeout=3)
                     SNAP_RPC_SOCKET.settimeout(3)
                     SNAP_RPC_BUFFER.clear()
                 SNAP_RPC_SOCKET.sendall(payload + b"\r\n")
@@ -1038,6 +1039,42 @@ def combined_state() -> dict[str, Any]:
     return {"snapcast": snapcast, "zones": snapcast.get("groups", []), "sources": snapcast.get("streams", []), "player": player, "dlna": player, "system": {"hostname": socket.gethostname()}, "errors": errors}
 
 
+def refresh_health() -> dict[str, Any]:
+    components: dict[str, bool] = {}
+    try:
+        snap_rpc("Server.GetStatus")
+        components["snapserver"] = True
+    except ControlError:
+        components["snapserver"] = False
+    try:
+        mpd_command("ping", 2)
+        components["mpd"] = True
+    except ControlError:
+        components["mpd"] = False
+    try:
+        port = int(os.environ.get("MYMPD_INTERNAL_PORT", "1782"))
+        with socket.create_connection(("127.0.0.1", port), timeout=2):
+            components["mympd"] = True
+    except (OSError, ValueError):
+        components["mympd"] = False
+    snapshot = {"ok": all(components.values()), "updatedAt": int(time.time()), "components": components}
+    with HEALTH_LOCK:
+        HEALTH_STATE.clear()
+        HEALTH_STATE.update(snapshot)
+    return snapshot
+
+
+def health_snapshot() -> dict[str, Any]:
+    with HEALTH_LOCK:
+        return dict(HEALTH_STATE)
+
+
+def health_monitor() -> None:
+    while True:
+        refresh_health()
+        time.sleep(HEALTH_INTERVAL)
+
+
 def run_player_action(body: dict[str, Any]) -> Any:
     action = str(body.get("action", ""))
     simple = {"play": "play", "pause": "pause 1", "resume": "pause 0", "stop": "stop", "next": "next", "previous": "previous", "clear": "clear"}
@@ -1145,7 +1182,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("X-Frame-Options", "DENY")
         self.send_header("Referrer-Policy", "no-referrer")
-        self.send_header("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; frame-src http://*:1782 https://*:1782")
+        self.send_header("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; frame-src 'self'")
         for name, value in (extra or {}).items():
             self.send_header(name, value)
         self.end_headers()
@@ -1171,14 +1208,6 @@ class Handler(BaseHTTPRequestHandler):
             raise ControlError("请求体必须是对象")
         return value
 
-    def query_page(self) -> tuple[str, int, int]:
-        params = parse_qs(urlparse(self.path).query)
-        return (
-            unquote(params.get("q", [""])[0])[:200],
-            clamp_int(params.get("offset", [0])[0], 0, 1000000, "offset"),
-            clamp_int(params.get("limit", [60])[0], 1, 200, "limit"),
-        )
-
     def authenticated(self) -> bool:
         return bool(session_token(self.headers.get("Cookie", "")))
 
@@ -1190,7 +1219,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802
         parsed_url = urlparse(self.path)
-        path, params = parsed_url.path, parse_qs(parsed_url.query)
+        path = parsed_url.path
         if not self.require_auth(path):
             return
         try:
@@ -1199,43 +1228,11 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/state":
                 self.json_response(combined_state()); return
             if path == "/api/health":
-                state = combined_state(); self.json_response({"ok": not state["errors"], "errors": state["errors"]}); return
-            if path == "/api/player/bootstrap":
-                self.json_response({"ok": True, **player_bootstrap(*self.query_page())}); return
-            if path == "/api/player/library":
-                query, offset, limit = self.query_page()
-                view = params.get("view", ["tracks"])[0]
-                parent = unquote(params.get("parent", [""])[0])[:1000]
-                self.json_response({"ok": True, **library_browse(view, query, offset, limit, parent)}); return
-            if path == "/api/player/library-detail":
-                kind = params.get("kind", [""])[0]
-                self.json_response({"ok": True, **library_detail(kind, params.get("id", [""])[0])}); return
-            if path == "/api/player/art":
-                art = media_art(params.get("uri", [""])[0])
-                if not art:
-                    self.send_error(HTTPStatus.NOT_FOUND); return
-                body, mime, _etag = art
-                self.binary_response(body, mime, "private, max-age=86400, immutable")
-                return
-            if path == "/api/player/lyrics":
-                self.json_response({"ok": True, **media_lyrics(params.get("uri", [""])[0])}); return
-            if path == "/api/player/playlist":
-                self.json_response({"ok": True, **playlist_detail(params.get("name", [""])[0])}); return
-            if path == "/api/player/playlist-export":
-                name = playlist_name(params.get("name", [""])[0])
-                body = playlist_m3u(name)
-                safe_name = re.sub(r'[^A-Za-z0-9_.-]+', "_", name).strip("_") or "playlist"
-                encoded_name = quote(name + ".m3u8", safe="")
-                disposition = f'attachment; filename="{safe_name}.m3u8"; filename*=UTF-8\'\'{encoded_name}'
-                self.binary_response(body, "audio/x-mpegurl; charset=utf-8", "no-store", disposition)
-                return
-            if path == "/api/player/collections":
-                self.json_response({"ok": True, **player_collections()}); return
-            if path == "/api/player/playlist-files":
-                force = params.get("refresh", ["0"])[0] in {"1", "true"}
-                self.json_response({"ok": True, "items": server_playlist_files(force)}); return
-            if path == "/api/mpd/library-config":
-                self.json_response({"ok": True, **library_config_state()}); return
+                self.json_response(health_snapshot()); return
+            if path == "/api/session-check":
+                if self.authenticated():
+                    self._headers(HTTPStatus.NO_CONTENT, "text/plain", 0); return
+                self.json_response({"ok": False, "error": "需要登录"}, HTTPStatus.UNAUTHORIZED); return
         except ControlError as exc:
             self.json_response({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST); return
         route = "/index.html" if path in ("/", "/index.html") else path
@@ -1276,11 +1273,7 @@ class Handler(BaseHTTPRequestHandler):
             self.json_response({"ok": True}, headers={"Set-Cookie": f"{SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0"}); return
         try:
             body = self.read_json()
-            if path == "/api/player/action":
-                result = run_player_action(body)
-            elif path == "/api/player/library-config":
-                result = save_library_path(body.get("path", ""))
-            elif path == "/api/snapcast/volume":
+            if path == "/api/snapcast/volume":
                 result = snap_rpc("Client.SetVolume", {"id": str(body.get("clientId", "")), "volume": {"muted": bool(body.get("muted", False)), "percent": clamp_int(body.get("percent"), 0, 100, "音量")}})
             elif path == "/api/snapcast/latency":
                 result = snap_rpc("Client.SetLatency", {"id": str(body.get("clientId", "")), "latency": clamp_int(body.get("latency"), -1000, 5000, "延迟")})
@@ -1314,10 +1307,10 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main() -> None:
-    threading.Thread(target=remote_stream_watchdog, name="mpd-watchdog", daemon=True).start()
-    server = ThreadingHTTPServer(("0.0.0.0", CONTROL_PORT), Handler)
+    threading.Thread(target=health_monitor, name="health-monitor", daemon=True).start()
+    server = ThreadingHTTPServer((CONTROL_HOST, CONTROL_PORT), Handler)
     server.daemon_threads = True
-    print(f"Snap/Room 3 listening on 0.0.0.0:{CONTROL_PORT}", flush=True)
+    print(f"Snap/Room 3 listening on {CONTROL_HOST}:{CONTROL_PORT}", flush=True)
     server.serve_forever()
 
 

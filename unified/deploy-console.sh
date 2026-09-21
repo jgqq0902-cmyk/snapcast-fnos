@@ -1,10 +1,15 @@
 #!/bin/sh
 set -eu
 
-project_dir=${PROJECT_DIR:-/vol1/1000/tools/snapcast}
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+project_dir=${PROJECT_DIR:-$(dirname "$script_dir")}
 timestamp=$(date +%Y%m%d-%H%M%S)
 backup_dir="$project_dir/backups/$timestamp-audit-remediation"
-backup_image="snapcast-all-in-one:backup-$timestamp"
+image_name=$(sed -n 's/^SNAPCAST_IMAGE=//p' "$project_dir/.env" 2>/dev/null | tail -n 1)
+container_name=$(sed -n 's/^CONTAINER_NAME=//p' "$project_dir/.env" 2>/dev/null | tail -n 1)
+image_name=${image_name:-snapcast-all-in-one:local}
+container_name=${container_name:-snapcast}
+backup_image="${image_name%:*}:backup-$timestamp"
 
 cd "$project_dir"
 [ -f .env ] || { echo "Missing .env; copy .env.example and configure it first." >&2; exit 1; }
@@ -21,9 +26,9 @@ esac
 mkdir -p "$backup_dir"
 cp docker-compose.yml snapserver.conf "$backup_dir/"
 [ ! -f config/snapserver.conf ] || cp config/snapserver.conf "$backup_dir/snapserver.runtime.conf"
-docker cp snapcast:/app/control "$backup_dir/control-running" 2>/dev/null || true
+docker cp "$container_name:/app/control" "$backup_dir/control-running" 2>/dev/null || true
 
-old_image=$(docker inspect --format '{{.Image}}' snapcast)
+old_image=$(docker inspect --format '{{.Image}}' "$container_name")
 docker image tag "$old_image" "$backup_image"
 
 docker compose config -q
@@ -32,7 +37,7 @@ mkdir -p config
 cp snapserver.conf config/snapserver.conf
 
 if docker compose up -d --remove-orphans --wait --wait-timeout 180 \
-    && docker exec snapcast /app/unified/smoke-test.sh; then
+    && docker exec "$container_name" /app/unified/smoke-test.sh; then
     echo "Deployment is healthy. Backup: $backup_dir; image: $backup_image"
     exit 0
 fi
@@ -41,6 +46,6 @@ echo "Deployment failed; restoring the previous runtime config and image." >&2
 if [ -f "$backup_dir/snapserver.runtime.conf" ]; then
     cp "$backup_dir/snapserver.runtime.conf" config/snapserver.conf
 fi
-docker image tag "$backup_image" snapcast-all-in-one:local
+docker image tag "$backup_image" "$image_name"
 docker compose up -d --remove-orphans --wait --wait-timeout 180
 exit 1
