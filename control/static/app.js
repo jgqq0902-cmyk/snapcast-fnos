@@ -46,14 +46,34 @@ async function checkAuth() {
 
 function openLogin() {
   const dialog = $("#loginDialog");
-  dialog.addEventListener("cancel", event => event.preventDefault(), { once: true });
   openDialog(dialog);
+}
+
+function clearPrivateState(message = "登录状态已失效，请重新登录。") {
+  state.zones = [];
+  state.sources = [];
+  state.player = { state: "stop", song: {}, capabilities: {} };
+  renderZones(true);
+  $("#zoneCount").textContent = "0";
+  $("#allSourceList").replaceChildren();
+  $("#zoneList").innerHTML = `<section class="state-panel"><svg class="state-mark" aria-hidden="true"><use href="/icons.svg#icon-speaker"/></svg><h2>需要重新登录</h2><p>${message}</p></section>`;
+  $("#zoneList").setAttribute("aria-busy", "false");
+  $("#mympdFrame").removeAttribute("src");
+  $("#playerPlaceholder").classList.remove("hidden");
+  navigate("devices");
+}
+
+function showConnectionError(message) {
+  $("#zoneList").innerHTML = `<section class="state-panel is-error"><svg class="state-mark" aria-hidden="true"><use href="/icons.svg#icon-network"/></svg><h2>网关连接中断</h2><p>${message || "无法读取设备状态，请检查网关服务和网络连接。"}</p><div class="state-actions"><button class="secondary-btn" data-retry-state>重新连接</button></div></section>`;
+  $("#zoneList").setAttribute("aria-busy", "false");
+  $("[data-retry-state]").onclick = refreshState;
 }
 
 async function login(event) {
   event.preventDefault();
   try {
     await post("/api/login", { username: $("#loginUsername").value, password: $("#loginPassword").value });
+    state.auth.authenticated = true;
     $("#loginPassword").value = "";
     closeDialog("#loginDialog");
     await checkAuth();
@@ -71,15 +91,25 @@ async function refreshState() {
     state.sources = data.sources || data.snapcast?.streams || [];
     state.zones = data.zones || data.snapcast?.groups || [];
     state.system = { ...state.system, ...(data.system || {}), healthy: !data.errors?.length };
+    $("#zoneList").setAttribute("aria-busy", "false");
     $("#healthLamp").classList.toggle("ok", state.system.healthy);
     $("#healthText").textContent = state.system.healthy ? "服务在线" : "部分异常";
     $("#gatewayName").textContent = state.system.hostname || "本机网关";
-    renderZones();
+    $("#stopAllSources").classList.toggle("has-active-audio", state.sources.some(source => source.status === "playing"));
+    renderZones(Boolean($("#zoneList .state-panel.is-error")));
     if ($("#groupsDialog").open) renderGroupManager();
   } catch (error) {
-    if (error.status === 401) return;
+    if (error.status === 401) {
+      state.auth.authenticated = false;
+      bootstrapped = false;
+      clearInterval(pollTimer);
+      clearPrivateState();
+      openLogin();
+      return;
+    }
     $("#healthLamp").classList.remove("ok");
     $("#healthText").textContent = "连接中断";
+    showConnectionError(error.message);
   }
 }
 
@@ -87,7 +117,12 @@ function navigate(route) {
   if (!["devices", "player", "settings"].includes(route)) route = "devices";
   pendingRoute = route;
   $$('[data-route]').forEach(button => button.classList.toggle("active", button.dataset.route === route));
-  $$('[data-page]').forEach(page => page.classList.toggle("active", page.dataset.page === route));
+  $$('.primary-nav [data-route]').forEach(button => button.toggleAttribute("aria-current", button.dataset.route === route));
+  $$('[data-page]').forEach(page => {
+    const active = page.dataset.page === route;
+    page.classList.toggle("active", active);
+    page.setAttribute("aria-hidden", String(!active));
+  });
   document.body.classList.toggle("player-mode", route === "player");
   if (route === "player") loadPlayer();
   history.replaceState(null, "", `#${route}`);
@@ -103,7 +138,14 @@ function loadPlayer(force = false) {
 }
 
 function initEvents() {
-  document.addEventListener("auth-required", openLogin);
+  document.addEventListener("auth-required", () => {
+    if (!state.auth.authenticated && !bootstrapped) return openLogin();
+    state.auth.authenticated = false;
+    bootstrapped = false;
+    clearInterval(pollTimer);
+    clearPrivateState();
+    openLogin();
+  });
   document.addEventListener("state-refresh", refreshState);
   document.addEventListener("click", event => {
     const route = event.target.closest("[data-route]");
@@ -112,6 +154,10 @@ function initEvents() {
     if (close) closeDialog(close.closest("dialog"));
   });
   $("#loginForm").onsubmit = login;
+  $("#loginDialog").addEventListener("cancel", event => event.preventDefault());
+  $("#loginDialog").addEventListener("close", () => {
+    if (state.auth.enabled && !state.auth.authenticated) queueMicrotask(openLogin);
+  });
   $("#refreshRooms").onclick = refreshState;
   $("#reloadPlayer").onclick = () => loadPlayer(true);
   $("#mympdFrame").onload = () => $("#playerPlaceholder").classList.add("hidden");
@@ -145,8 +191,8 @@ async function logout() {
   try { await post("/api/logout", {}); } catch {}
   state.auth.authenticated = false;
   bootstrapped = false;
-  $("#mympdFrame").removeAttribute("src");
   clearInterval(pollTimer);
+  clearPrivateState("已安全退出，设备与播放状态已从页面清除。");
   openLogin();
 }
 

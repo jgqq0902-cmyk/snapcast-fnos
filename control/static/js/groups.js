@@ -11,6 +11,8 @@ const groupById = id => state.zones.find(group => group.id === id);
 
 function locked(button, active, label = "处理中") {
   button.disabled = active;
+  button.setAttribute("aria-busy", String(active));
+  button.classList.toggle("is-pending", active);
   if (active) {
     button.dataset.label = button.innerHTML;
     button.textContent = label;

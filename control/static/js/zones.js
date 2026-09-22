@@ -15,7 +15,10 @@ export function renderZones(force = false) {
   const expanded = new Set($$(".zone-card details[open]", list).map(node => node.closest(".zone-card").dataset.zoneId));
   list.replaceChildren();
   state.zones.forEach(zone => list.append(zoneCard(zone, expanded.has(zone.id))));
-  if (!list.children.length) list.innerHTML = '<p class="empty">未发现播放房间</p>';
+  if (!list.children.length) {
+    list.innerHTML = `<section class="state-panel"><svg class="state-mark" aria-hidden="true"><use href="/icons.svg#icon-speaker"/></svg><h2>暂未发现设备</h2><p>请确认 Snapclient 已启动，并与当前 Snap / Room 网关位于同一网络。</p><div class="state-actions"><button class="secondary-btn" data-empty-refresh>重新扫描</button></div></section>`;
+    $("[data-empty-refresh]", list).onclick = () => document.dispatchEvent(new CustomEvent("state-refresh"));
+  }
 }
 
 function renderBatchSources() {
@@ -40,10 +43,11 @@ function zoneCard(zone, expanded) {
   const song = zone.sourceType === "mpd" ? state.player.song || {} : {};
   const now = zone.sourceType === "airplay" ? "AirPlay 外部音频" : song.title || "等待播放";
   const meta = zone.sourceType === "airplay" ? "由发送设备控制" : [song.artist, song.album].filter(Boolean).join(" · ") || "本地播放器";
-  card.innerHTML = `<header class="zone-head"><div><span class="room-orb"></span><div><small>ZONE</small><h2>${esc(zone.name)}</h2></div></div><span class="zone-online">${zone.connectedCount}/${zone.clients.length} 在线</span></header>
-    <div class="zone-now"><small>${esc(zone.source?.name || "UNKNOWN")} · ${zone.source?.status === "playing" ? "正在播放" : "等待音频"}</small><b>${esc(now)}</b><span>${esc(meta)}</span></div>
+  const partial = zone.connectedCount < zone.clients.length;
+  card.innerHTML = `<header class="zone-head"><div><span class="room-orb"></span><div><small>播放组</small><h2>${esc(zone.name)}</h2></div></div><span class="zone-online${partial ? " partial" : ""}">${zone.connectedCount}/${zone.clients.length} 在线</span></header>
+    <div class="zone-now"><small>${esc(zone.source?.name || "未知音源")} · ${zone.source?.status === "playing" ? "正在播放" : "等待音频"}</small><b>${esc(now)}</b><span>${esc(meta)}</span></div>
     <label class="group-volume"><span>${icon("volume")}<b>房间音量</b></span><input type="range" min="0" max="100" value="${zone.volume}"><output>${zone.volume}</output></label>
-    <div class="zone-sources" aria-label="${esc(zone.name)}音源">${state.sources.map(source => `<button class="${zone.streamId === source.id ? "active" : ""}" data-zone-source="${esc(source.id)}"><i></i>${esc(source.name)}</button>`).join("")}</div>
+    <div class="zone-sources" aria-label="${esc(zone.name)}音源">${state.sources.map(source => `<button class="${zone.streamId === source.id ? "active" : ""}" aria-pressed="${zone.streamId === source.id}" data-zone-source="${esc(source.id)}"><i></i>${esc(source.name)}</button>`).join("")}</div>
     <details class="zone-devices" ${expanded ? "open" : ""}><summary><span>${icon("speaker")}设备与延迟</span><span>${zone.clients.length} 台 ${icon("expand")}</span></summary><div class="client-list"></div></details>`;
 
   const groupVolume = $(".group-volume input", card);

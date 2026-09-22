@@ -2,11 +2,12 @@
 .zone-card { min-width: 0; padding: 20px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface-1); box-shadow: 0 16px 40px rgb(40 24 16 / .06); backdrop-filter: blur(18px); }
 .zone-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
 .zone-head > div { min-width: 0; display: flex; align-items: center; gap: 11px; }
-.zone-head small { color: var(--brand); font-size: 9px; font-weight: 700; letter-spacing: .15em; }
+.zone-head small { color: var(--brand-text); font-size: var(--text-caption); font-weight: var(--weight-semibold); letter-spacing: .1em; }
 .zone-head h2 { margin: 1px 0 0; font-size: 24px; }
 .zone-online { flex: 0 0 auto; padding: 6px 9px; border-radius: 999px; background: var(--surface-2); color: var(--text-secondary); font-size: 10px; }
+.zone-online.partial { background: var(--danger-soft); color: var(--danger); }
 .zone-now { display: grid; gap: 4px; margin: 18px 0; padding: 16px; border-radius: 14px; background: linear-gradient(135deg, var(--art-accent-soft), transparent); }
-.zone-now small { color: var(--art-accent); font-size: 9px; font-weight: 700; letter-spacing: .08em; }
+.zone-now small { color: var(--brand-text); font-size: var(--text-caption); font-weight: var(--weight-semibold); letter-spacing: .04em; }
 .zone-now b { font-size: 15px; }
 .zone-now span { overflow: hidden; color: var(--text-secondary); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .group-volume, .client-volume { display: grid; grid-template-columns: auto minmax(0, 1fr) 34px; align-items: center; gap: 11px; }
@@ -17,6 +18,8 @@
 .zone-sources button, .source-list button { min-height: 36px; display: flex; align-items: center; gap: 7px; padding: 0 12px; border: 1px solid var(--line); border-radius: 999px; color: var(--text-secondary); }
 .zone-sources button i, .source-list button i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .zone-sources button.active { border-color: color-mix(in srgb, var(--art-accent) 45%, transparent); background: var(--art-accent); color: var(--on-art-accent); }
+.zone-sources button:hover, .source-list button:hover { border-color: var(--brand-border); background: var(--state-hover); color: var(--text-primary); }
+.zone-sources button.active:hover { background: color-mix(in srgb, var(--art-accent) 88%, var(--text-primary)); color: var(--on-art-accent); }
 .zone-devices { margin-top: 8px; border-top: 1px solid var(--line); }
 .zone-devices > summary { min-height: 46px; display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--text-secondary); font-size: 11px; cursor: pointer; list-style: none; touch-action: manipulation; }
 .zone-devices > summary::-webkit-details-marker { display: none; }

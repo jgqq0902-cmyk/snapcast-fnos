@@ -597,7 +597,9 @@ class Handler(BaseHTTPRequestHandler):
         content_type = mimetypes.guess_type(requested.name)[0] or "application/octet-stream"
         if content_type.startswith("text/") or content_type == "application/javascript":
             content_type += "; charset=utf-8"
-        self._headers(HTTPStatus.OK, content_type, len(body), cache="private, max-age=300" if path != "/index.html" else "no-store")
+        # Revalidate UI assets on every page load so a container upgrade cannot
+        # leave an authenticated browser running stale control logic.
+        self._headers(HTTPStatus.OK, content_type, len(body), cache="no-store" if route == "/index.html" else "private, no-cache")
         self.wfile.write(body)
 
     def do_POST(self) -> None:  # noqa: N802

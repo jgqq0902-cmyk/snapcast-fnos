@@ -206,6 +206,9 @@ class AuthHttpTest(unittest.TestCase):
         index = response.read().decode()
         self.assertIn("Snap / Room", index)
         self.assertNotIn("192.168.", index)
+        self.assertEqual(response.headers["Cache-Control"], "no-store")
+        asset = self.request("/app.js?v=cache-test")
+        self.assertEqual(asset.headers["Cache-Control"], "private, no-cache")
         self.request("/api/login", {"username": "admin", "password": "correct-password"}, self.opener)
         with self.assertRaises(urllib.error.HTTPError) as retired:
             self.request("/api/player/bootstrap", opener=self.opener)
@@ -213,6 +216,15 @@ class AuthHttpTest(unittest.TestCase):
 
 
 class ProductionConfigTest(unittest.TestCase):
+    @staticmethod
+    def contrast_ratio(foreground, background):
+        def luminance(value):
+            channels = [int(value[index:index + 2], 16) / 255 for index in (1, 3, 5)]
+            channels = [channel / 12.92 if channel <= 0.04045 else ((channel + 0.055) / 1.055) ** 2.4 for channel in channels]
+            return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722
+        light, dark = sorted((luminance(foreground), luminance(background)), reverse=True)
+        return (light + 0.05) / (dark + 0.05)
+
     def test_nginx_protects_player_websocket_and_limits_login_by_remote_ip(self):
         config = (Path(__file__).parents[1] / "unified" / "nginx.conf").read_text(encoding="utf-8")
         self.assertIn("limit_req_zone $binary_remote_addr", config)
@@ -227,6 +239,34 @@ class ProductionConfigTest(unittest.TestCase):
         self.assertIn("padding: 0 0 calc(62px + env(safe-area-inset-bottom))", styles)
         self.assertIn("height: 100dvh", styles)
         self.assertNotIn("repeat(5", styles)
+
+    def test_commercial_ui_accessibility_contract(self):
+        static = Path(__file__).parent / "static"
+        index = (static / "index.html").read_text(encoding="utf-8")
+        app = (static / "app.js").read_text(encoding="utf-8")
+        zones = (static / "js" / "zones.js").read_text(encoding="utf-8")
+        tokens = (static / "styles" / "tokens.css").read_text(encoding="utf-8")
+        self.assertGreaterEqual(self.contrast_ratio("#87502f", "#fbf7f1"), 4.5)
+        self.assertIn('--brand-text: #87502f', tokens)
+        self.assertIn('aria-current="page"', index)
+        self.assertIn('aria-labelledby="loginTitle"', index)
+        self.assertIn('aria-live="polite"', index)
+        self.assertIn('app.js?v=', index)
+        self.assertIn('aria-pressed=', zones)
+        self.assertIn('clearPrivateState', app)
+        self.assertIn('addEventListener("cancel", event => event.preventDefault())', app)
+        self.assertIn('queueMicrotask(openLogin)', app)
+        self.assertNotIn('{ once: true }', app.split('addEventListener("cancel"', 1)[1].split(";", 1)[0])
+
+    def test_frontend_has_complete_device_states_and_user_facing_copy(self):
+        static = Path(__file__).parent / "static"
+        sources = "\n".join(path.read_text(encoding="utf-8") for path in (
+            static / "index.html", static / "app.js", static / "js" / "zones.js"
+        ))
+        for state_copy in ("正在连接设备", "暂未发现设备", "网关连接中断", "需要重新登录"):
+            self.assertIn(state_copy, sources)
+        for engineering_copy in (">SYSTEM<", ">BATCH ACTION<", ">APPEARANCE<", ">ACCOUNT<", ">ZONE<", "UNKNOWN"):
+            self.assertNotIn(engineering_copy, sources)
 
     def test_retired_player_backend_symbols_are_absent(self):
         backend = (Path(__file__).parent / "app.py").read_text(encoding="utf-8")
