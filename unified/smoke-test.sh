@@ -40,6 +40,7 @@ assert_matching_process_user() {
 for process in snapserver dbus-daemon avahi-daemon shairport-sync mpd mympd upmpdcli nginx; do
     assert_process_user "$process"
 done
+pgrep -f '/app/unified/dlna_relay.py' >/dev/null || fail "dlna-relay is not running"
 assert_matching_process_user control '/app/control/app.py'
 
 # /proc/net/tcp stores IPv4 addresses as little-endian hex.
@@ -52,6 +53,8 @@ mympd_port=${MYMPD_INTERNAL_PORT:-1782}
 assert_listener "$web_port" 00000000
 assert_listener "$control_port" 0100007F
 assert_listener "$mympd_port" 0100007F
+assert_listener 1790 0100007F
+assert_listener 6601 0100007F
 
 wget -qO- "http://127.0.0.1:$web_port/api/health" >/dev/null || fail "public health check failed"
 wget -qO- "http://127.0.0.1:$mympd_port/" >/dev/null || fail "internal myMPD web check failed"

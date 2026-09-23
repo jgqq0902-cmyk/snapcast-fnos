@@ -10,6 +10,7 @@
 - 按播放区域控制音源、音量、静音和客户端延迟
 - `Default` Meta 流按 `Airplay/DLNA` 顺序选择，AirPlay 优先
 - 不连接在线元数据、图标 CDN、遥测或外部管理服务
+- DLNA 远程 HTTP/HTTPS 音源经过容器内回环续传代理；CDN 提前断开时使用字节 Range 从中断位置恢复
 
 ## 网络与安全
 
@@ -24,6 +25,7 @@
 | myMPD 内部服务 | `127.0.0.1:1782` | 仅容器内部，由 `/player/` 代理 |
 | Snapserver HTTP/JSON-RPC | `127.0.0.1:1780` | 仅容器内部 |
 | Snapserver TCP control | `127.0.0.1:1705` | 仅容器内部 |
+| DLNA HTTP 续传与 MPD 代理 | `127.0.0.1:1790/6601` | 仅容器内部 |
 
 1780 和 1705 不再对 LAN 开放，避免绕过 Web 控制台鉴权。旧 Snapweb 因此不再作为外部入口；统一入口是 1781。仅在完全可信且隔离的家庭 LAN 中，才可将 `CONTROL_AUTH_ENABLED=false`。
 
@@ -91,6 +93,7 @@ sh unified/deploy-console.sh
 
 ```sh
 python -m unittest control.test_app -q
+python -m unittest unified.test_dlna_relay -v
 node --check control/static/app.js
 node --check control/static/js/api.js
 node --check control/static/js/store.js
@@ -146,6 +149,8 @@ docker compose up -d --remove-orphans --wait --wait-timeout 180
 “播放器”页通过同源 `/player/` 全屏嵌入未修改的 myMPD，并保留重新加载和新窗口打开入口。myMPD 只监听容器回环地址，访问统一受控制台会话保护；其状态持久化在 `data/mympd`，并连接同容器内的 MPD Unix socket。
 
 设备页的“立即停止”会停止 MPD（保留队列）并断开当前 AirPlay 会话，不会修改任何设备的音量、静音、延迟或播放组。AirPlay 优先使用 Shairport Sync 的 D-Bus `DropSession`；接口不可用时由固定的无参数辅助脚本终止接收进程，Supervisor 随即恢复接收服务。
+
+upmpdcli 只连接回环 MPD 命令代理 `127.0.0.1:6601`。代理仅改写 DLNA 提交的 HTTP/HTTPS 播放地址，本地曲库和 myMPD 仍直接连接 MPD `6600`。对应的 HTTP 续传服务只监听 `127.0.0.1:1790`，不会成为 LAN 通用代理；上游连接提前结束时按当前字节位置重试，默认最多连续重试 10 次并采用退避等待。带签名 URL 已失效、源站不允许续传或控制端主动停止时不会伪造成功。
 
 控制台以 WCAG 2.2 AA 为验收基线：浅色主题的小号强调文字使用独立高对比度铜棕色；主导航和音源选择暴露当前 ARIA 状态；登录弹窗不可通过 ESC 或背景点击关闭。退出登录或会话过期会立即清空设备、音源及播放器 iframe。设备页对连接中、空设备、网关离线、部分设备离线和会话失效分别提供明确状态与恢复入口。
 
