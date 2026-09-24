@@ -248,6 +248,8 @@ class ProductionConfigTest(unittest.TestCase):
         config = (Path(__file__).parents[1] / "unified" / "nginx.conf").read_text(encoding="utf-8")
         self.assertIn("limit_req_zone $binary_remote_addr", config)
         self.assertIn("location = /api/login", config)
+        self.assertIn("location = /api/player/events", config)
+        self.assertIn("proxy_buffering off", config)
         self.assertNotIn("location /player/", config)
         self.assertNotIn("__MYMPD_PORT__", config)
         self.assertNotIn("proxy_set_header Upgrade", config)
