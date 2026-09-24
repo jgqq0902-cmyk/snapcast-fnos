@@ -56,6 +56,7 @@ chmod 600 .env
 2. 编辑 `.env`：
 
 - `GATEWAY_IP`、`LAN_SUBNET`、`LAN_GATEWAY`、`MACVLAN_PARENT` 必须匹配实际 LAN。
+- `DLNA_RELAY_ALLOWED_LAN_CIDRS` 必须列出允许 DLNA 拉流的家庭 LAN 网段，多个网段以逗号分隔；loopback、link-local、multicast、未指定地址、网关自身及未列入白名单的私网地址始终拒绝，每次 HTTP 重定向也会重新校验。
 - `CONFIG_DIR`、`DATA_DIR`、`CERTS_DIR` 和 `MEDIA_ROOT` 指向宿主持久化目录；默认前三项使用项目内相对路径。
 - `CONTROL_PASSWORD` 必须改为较长且唯一的密码，不要提交 `.env`。
 - `PUID`/`PGID` 应能读取曲库并写入项目的 `data` 目录。默认 `1000:1001` 适配 `/vol1/1000/music` 的当前 FNOS 权限；可用 `stat -c '%u:%g %a %n' /vol1/1000/music` 核实。

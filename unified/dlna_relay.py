@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import hashlib
 import http.client
+import ipaddress
 import os
 import re
 import socket
@@ -28,6 +29,71 @@ MAX_RETRIES = int(os.environ.get("DLNA_RELAY_MAX_RETRIES", "10"))
 READ_TIMEOUT = int(os.environ.get("DLNA_RELAY_READ_TIMEOUT", "20"))
 CHUNK_SIZE = 128 * 1024
 URL_COMMAND = re.compile(rb'^(add|addid)\s+"((?:\\.|[^"\\])*)"(.*?)(\r?\n)$')
+
+
+class RelayTargetError(ValueError):
+    pass
+
+
+def _networks(value: str) -> tuple[ipaddress._BaseNetwork, ...]:
+    networks = []
+    for item in value.split(","):
+        item = item.strip()
+        if item:
+            networks.append(ipaddress.ip_network(item, strict=False))
+    return tuple(networks)
+
+
+ALLOWED_LAN_NETWORKS = _networks(os.environ.get("DLNA_RELAY_ALLOWED_LAN_CIDRS", ""))
+GATEWAY_ADDRESSES = frozenset(
+    ipaddress.ip_address(item.strip())
+    for item in os.environ.get("GATEWAY_IP", "").split(",")
+    if item.strip()
+)
+
+
+def validate_relay_target(url: str) -> str:
+    parsed = urllib.parse.urlsplit(url)
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        raise RelayTargetError("only HTTP and HTTPS targets are allowed")
+    if parsed.username is not None or parsed.password is not None:
+        raise RelayTargetError("embedded credentials are not allowed")
+    try:
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    except ValueError as exc:
+        raise RelayTargetError("invalid target port") from exc
+    try:
+        addresses = {
+            ipaddress.ip_address(item[4][0].split("%", 1)[0])
+            for item in socket.getaddrinfo(parsed.hostname, port, type=socket.SOCK_STREAM)
+        }
+    except (OSError, ValueError) as exc:
+        raise RelayTargetError("target hostname could not be resolved") from exc
+    if not addresses:
+        raise RelayTargetError("target hostname returned no addresses")
+    for address in addresses:
+        if address in GATEWAY_ADDRESSES:
+            raise RelayTargetError("gateway management address is blocked")
+        if address.is_loopback:
+            raise RelayTargetError("loopback target is blocked")
+        if address.is_link_local:
+            raise RelayTargetError("link-local target is blocked")
+        if address.is_multicast:
+            raise RelayTargetError("multicast target is blocked")
+        if address.is_unspecified:
+            raise RelayTargetError("unspecified target is blocked")
+        if not address.is_global and not any(address in network for network in ALLOWED_LAN_NETWORKS):
+            raise RelayTargetError("private or non-public target is outside the allowed LAN")
+    return url
+
+
+class ValidatingRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        validate_relay_target(newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+UPSTREAM_OPENER = urllib.request.build_opener(ValidatingRedirectHandler())
 
 
 def mpd_unescape(value: bytes) -> str:
@@ -99,6 +165,7 @@ def parse_range(value: str | None) -> int:
 
 
 def open_upstream(url: str, offset: int):
+    validate_relay_target(url)
     headers = {
         "Accept-Encoding": "identity",
         "Connection": "close",
@@ -107,7 +174,7 @@ def open_upstream(url: str, offset: int):
     if offset:
         headers["Range"] = f"bytes={offset}-"
     request = urllib.request.Request(url, headers=headers)
-    return urllib.request.urlopen(request, timeout=READ_TIMEOUT)
+    return UPSTREAM_OPENER.open(request, timeout=READ_TIMEOUT)
 
 
 class RelayHandler(BaseHTTPRequestHandler):
@@ -138,6 +205,10 @@ class RelayHandler(BaseHTTPRequestHandler):
             return
         except urllib.error.HTTPError as exc:
             self.send_error(exc.code, "upstream rejected the request")
+            return
+        except RelayTargetError as exc:
+            print(f"dlna-relay blocked target: {exc}", flush=True)
+            self.send_error(HTTPStatus.FORBIDDEN, "upstream target is not allowed")
             return
         except Exception as exc:
             print(f"dlna-relay open failed: {type(exc).__name__}: {exc}", flush=True)
@@ -211,6 +282,9 @@ class RelayHandler(BaseHTTPRequestHandler):
                             if not skipped:
                                 raise EOFError("upstream ended while seeking resume point")
                             remaining -= len(skipped)
+                except RelayTargetError as retry_error:
+                    print(f"dlna-relay blocked reconnect target: {retry_error}", flush=True)
+                    return
                 except Exception as retry_error:
                     exc = retry_error
                     continue
