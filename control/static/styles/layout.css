@@ -1,4 +1,5 @@
 .app-shell { position: relative; min-height: 100vh; padding-left: var(--sidebar); padding-bottom: var(--player-height); }
+.device-shell { padding-left: 0; background: radial-gradient(circle at 16% 10%, rgb(71 218 186 / .14), transparent 28%), radial-gradient(circle at 88% 76%, rgb(84 60 255 / .15), transparent 34%), linear-gradient(145deg, #07100f, #10151d 52%, #090b13); }
 .sidebar { position: fixed; z-index: 20; inset: 0 auto var(--player-height) 0; width: var(--sidebar); display: flex; flex-direction: column; padding: 28px 18px 22px; border-right: 1px solid var(--line); background: color-mix(in srgb, var(--bg) 87%, transparent); backdrop-filter: blur(24px); }
 .brand { display: flex; align-items: center; gap: 6px; padding: 0 10px 35px; color: inherit; font-size: 21px; letter-spacing: .05em; text-decoration: none; }
 .brand i { color: var(--text-secondary); font-family: serif; font-weight: 400; }
@@ -18,6 +19,8 @@
 .connection div { min-width: 0; display: grid; }
 .connection small { overflow: hidden; color: var(--text-secondary); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .workspace { position: relative; z-index: 1; width: min(1180px, 100%); margin: 0 auto; padding: 62px 48px 70px; }
+.device-shell .workspace { width: min(1480px, 100%); }
+.console-brand { padding: 0; color: #f7fbfa; }
 .view { display: none; animation: enter .28s ease both; }
 .view.active { display: block; }
 @keyframes enter { from { opacity: 0; transform: translateY(6px); } }

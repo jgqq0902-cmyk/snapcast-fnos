@@ -14,8 +14,9 @@ import app as app_module
 from app import (
     ControlError, GroupMutationError, Handler, clamp_int, create_group,
     login_allowed, merge_groups, normalized_snapcast_state, parse_mpd,
+    player_state, reconcile_main_group, seek_player, set_player_volume,
     record_login_failure, set_client_name, set_group_members, set_group_name,
-    set_zone_volume, song_payload, source_descriptor, stop_all_sources,
+    set_client_active, set_zone_volume, song_payload, source_descriptor, stop_all_sources,
 )
 
 
@@ -33,6 +34,36 @@ class ControlHelpersTest(unittest.TestCase):
     def test_source_descriptor_exposes_source_type(self):
         self.assertEqual(source_descriptor({"id": "Airplay"})["sourceType"], "airplay")
         self.assertEqual(source_descriptor({"id": "DLNA"})["sourceType"], "mpd")
+
+    def test_player_state_classifies_dlna_and_seekability(self):
+        responses = [
+            ["state: play", "elapsed: 12.5", "duration: 180", "audio: 48000:16:2"],
+            ["file: https://cdn.example/video.mp4", "Title: 视频", "duration: 180"],
+        ]
+        with patch("app.mpd_command", side_effect=responses):
+            result = player_state()
+        self.assertEqual(result["origin"], "dlna")
+        self.assertTrue(result["seekable"])
+        self.assertFalse(result["live"])
+
+    def test_seek_player_uses_bounded_numeric_position(self):
+        current = {"seekable": True, "duration": 120, "state": "play"}
+        after = {**current, "elapsed": 120}
+        with patch("app.player_state", side_effect=[current, after]), patch("app.mpd_command", return_value=[]) as mpd:
+            result = seek_player(999)
+        mpd.assert_called_once_with("seekcur 120.000")
+        self.assertEqual(result["elapsed"], 120)
+
+    def test_seek_player_rejects_live_stream(self):
+        with patch("app.player_state", return_value={"seekable": False, "duration": 0}):
+            with self.assertRaises(ControlError):
+                seek_player(30)
+
+    def test_player_volume_controls_mpd_mixer(self):
+        with patch("app.mpd_command", side_effect=[[], ["state: stop", "volume: 42"], []]) as mpd:
+            result = set_player_volume(42)
+        self.assertEqual(mpd.call_args_list[0].args, ("setvol 42",))
+        self.assertEqual(result["volume"], 42)
 
     def test_login_rate_limit_is_per_address(self):
         app_module.LOGIN_ATTEMPTS.clear()
@@ -68,6 +99,36 @@ class ControlHelpersTest(unittest.TestCase):
         with patch("app.normalized_snapcast_state", return_value=zones), patch("app.snap_rpc", return_value={}) as rpc:
             set_zone_volume("g1", 30)
         self.assertEqual([call.args[1]["volume"]["percent"] for call in rpc.call_args_list], [30, 30])
+
+    def test_zone_volume_skips_inactive_clients(self):
+        zones = {"groups": [{"id": "g1", "clients": [
+            {"id": "active", "connected": True, "active": True, "volume": 80},
+            {"id": "inactive", "connected": True, "active": False, "volume": 40},
+        ]}]}
+        with patch("app.normalized_snapcast_state", return_value=zones), patch("app.snap_rpc", return_value={}) as rpc:
+            set_zone_volume("g1", 50)
+        self.assertEqual([call.args[1]["id"] for call in rpc.call_args_list], ["active"])
+
+    def test_client_activation_preserves_volume(self):
+        before = self.snap_state([{"id": "g1", "clients": [{"id": "c1", "volume": 37, "muted": True}]}])
+        after = self.snap_state([{"id": "g1", "clients": [{"id": "c1", "volume": 37, "muted": False}]}])
+        with patch("app.normalized_snapcast_state", side_effect=[before, after]), patch("app.snap_rpc", return_value={}) as rpc:
+            set_client_active("c1", True)
+        rpc.assert_called_once_with("Client.SetVolume", {"id": "c1", "volume": {"muted": False, "percent": 37}})
+
+    def test_reconcile_main_group_merges_and_selects_default(self):
+        initial = {"groups": [
+            {"id": "g1", "name": "客厅", "streamId": "DLNA", "clients": [{"id": "a"}, {"id": "b"}]},
+            {"id": "g2", "name": "书房", "streamId": "Airplay", "clients": [{"id": "c"}]},
+        ], "streams": [], "mainGroupId": "g1"}
+        merged = {"groups": [{"id": "g1", "name": "客厅", "streamId": "DLNA", "clients": [{"id": "a"}, {"id": "b"}, {"id": "c"}]}], "streams": [], "mainGroupId": "g1"}
+        final = {"groups": [{"id": "g1", "name": "主播放组", "streamId": "Default", "clients": merged["groups"][0]["clients"]}], "streams": [], "mainGroupId": "g1"}
+        with patch("app.normalized_snapcast_state", side_effect=[initial, merged, final]), patch("app.snap_rpc", return_value={}) as rpc:
+            result = reconcile_main_group()
+        calls = [call.args for call in rpc.call_args_list]
+        self.assertIn(("Group.SetClients", {"id": "g1", "clients": ["a", "b", "c"]}), calls)
+        self.assertIn(("Group.SetStream", {"id": "g1", "stream_id": "Default"}), calls)
+        self.assertEqual(result["groups"][0]["name"], "主播放组")
 
     @staticmethod
     def snap_state(groups, streams=None):
@@ -232,13 +293,125 @@ class ProductionConfigTest(unittest.TestCase):
         self.assertIn("auth_request /_session_check", config)
         self.assertIn("proxy_set_header Upgrade $http_upgrade", config)
 
-    def test_mobile_breakpoint_has_three_columns_and_safe_bottom_space(self):
+    def test_bundled_radio_playlist_is_well_formed_and_deduplicated(self):
+        playlist = Path(__file__).parents[1] / "unified" / "radio-stations.m3u"
+        lines = [line.strip() for line in playlist.read_text(encoding="utf-8").splitlines() if line.strip()]
+        self.assertEqual(lines[0], "#EXTM3U")
+        self.assertGreater(len(lines), 100)
+        self.assertEqual((len(lines) - 1) % 2, 0)
+        urls = []
+        for index in range(1, len(lines), 2):
+            self.assertTrue(lines[index].startswith("#EXTINF:-1,"))
+            self.assertRegex(lines[index + 1], r"^https?://[^/]+/")
+            self.assertNotIn("://lhttp://", lines[index + 1])
+            urls.append(lines[index + 1])
+        self.assertEqual(len(urls), len(set(urls)))
+
+    def test_native_mympd_radio_importer_is_idempotent(self):
+        import importlib.util
+        project = Path(__file__).parents[1]
+        module_path = project / "unified" / "import-mympd-radios.py"
+        spec = importlib.util.spec_from_file_location("import_mympd_radios", module_path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        class FakeApi:
+            def __init__(self):
+                self.saved = []
+
+            def call(self, method, params):
+                if method.endswith("_SEARCH"):
+                    return {"data": [{"Name": "已有电台", "StreamUri": "https://radio/existing"}]}
+                self.saved.append(params)
+                return {"message": "saved"}
+
+        api = FakeApi()
+        changed, unchanged = module.sync(api, [
+            ("已有电台", "https://radio/existing"),
+            ("新增电台", "https://radio/new"),
+        ])
+        self.assertEqual((changed, unchanged), (1, 1))
+        self.assertEqual(api.saved[0]["oldName"], "新增电台")
+        self.assertEqual(api.saved[0]["streamUri"], "https://radio/new")
+
+        importer_source = module_path.read_text(encoding="utf-8")
+        self.assertIn("ensure_ascii=False", importer_source)
+
+        supervisor = (project / "unified" / "supervisord.conf").read_text(encoding="utf-8")
+        self.assertIn("[program:radio-import]", supervisor)
+        self.assertIn("/api/default", supervisor)
+        mympd_program = supervisor.split("[program:mympd]", 1)[1].split("[program:", 1)[0]
+        self.assertIn('MPD_HOST="127.0.0.1"', mympd_program)
+        self.assertNotIn('MPD_HOST="/app/data/dlna/mpd.sock"', mympd_program)
+
+        mympd_init = (project / "unified" / "mympd-init.sh").read_text(encoding="utf-8")
+        self.assertIn('write_config mympd_uri "http://127.0.0.1:$http_port"', mympd_init)
+        self.assertNotIn('127.0.0.1:$http_port/"', mympd_init)
+        self.assertIn('write_state mpd_host 127.0.0.1', mympd_init)
+        self.assertIn('write_state mpd_port 6600', mympd_init)
+        self.assertNotIn('$web_port/player/', mympd_init)
+
+    def test_mobile_breakpoint_has_unified_player_without_navigation_rail(self):
         styles = (Path(__file__).parent / "static" / "styles" / "responsive.css").read_text(encoding="utf-8")
         self.assertIn("@media (max-width: 900.98px)", styles)
-        self.assertIn("grid-template-columns: repeat(3", styles)
-        self.assertIn("padding: 0 0 calc(62px + env(safe-area-inset-bottom))", styles)
-        self.assertIn("height: 100dvh", styles)
-        self.assertNotIn("repeat(5", styles)
+        self.assertIn(".device-shell { padding-left: 0; padding-bottom: 0; }", styles)
+        self.assertIn(".dashboard { grid-template-columns: 1fr; }", styles)
+
+    def test_dual_panel_ui_and_mympd_skin_contract(self):
+        project = Path(__file__).parents[1]
+        index = (Path(__file__).parent / "static" / "index.html").read_text(encoding="utf-8")
+        zones = (Path(__file__).parent / "static" / "js" / "zones.js").read_text(encoding="utf-8")
+        mympd_css = (project / "unified" / "mympd-custom.css").read_text(encoding="utf-8")
+        self.assertIn('id="playerPanel"', index)
+        self.assertIn('id="devicePanelHost"', index)
+        self.assertNotIn('data-route="player"', index)
+        self.assertNotIn('data-route="devices"', index)
+        self.assertNotIn('id="reloadPlayer"', index)
+        self.assertNotIn('class="sidebar"', index)
+        self.assertNotIn("nowPlayingCard", zones)
+        self.assertNotIn("data-main-source", zones)
+        self.assertIn("prefers-reduced-motion", mympd_css)
+        self.assertNotIn('data-route="settings"', index)
+
+    def test_native_lightfield_player_contract(self):
+        static = Path(__file__).parent / "static"
+        index = (static / "index.html").read_text(encoding="utf-8")
+        adapter = (static / "js" / "mympd-adapter.js").read_text(encoding="utf-8")
+        player = (static / "js" / "player.js").read_text(encoding="utf-8")
+        styles = (static / "styles" / "player.css").read_text(encoding="utf-8")
+        icons = (static / "icons.svg").read_text(encoding="utf-8")
+        self.assertNotIn("<iframe", index)
+        view_order = [
+            index.index('data-player-view="now"'),
+            index.index('data-player-view="queue"'),
+            index.index('data-player-view="playlists"'),
+            index.index('data-player-view="radio"'),
+            index.index('data-player-view="library"'),
+        ]
+        self.assertEqual(view_order, sorted(view_order))
+        self.assertIn('class="active" data-player-view="now"', index)
+        self.assertNotIn('data-player-view="lyrics"', index)
+        self.assertIn('repeat(5, minmax(0, 1fr))', styles)
+        self.assertIn('class="lightfield-player embedded-player active"', index)
+        self.assertIn('const API_URL = "/player/api/default"', adapter)
+        self.assertIn('const WS_PATH = "/player/ws/default"', adapter)
+        self.assertIn("MYMPD_API_WEBRADIO_FAVORITE_SEARCH", adapter)
+        self.assertIn("radioNames.get(normalizeUri(uri))", adapter)
+        self.assertIn("rememberRadioNames", adapter)
+        self.assertIn("MYMPD_API_QUEUE_ADD_RANDOM", adapter)
+        self.assertIn('quantity: 50', adapter)
+        self.assertIn("MYMPD_API_PLAYLIST_CONTENT_APPEND_URIS", adapter)
+        self.assertIn("MYMPD_API_PLAYLIST_RENAME", adapter)
+        self.assertIn("MYMPD_API_PLAYLIST_RM", adapter)
+        self.assertIn("MYMPD_API_PLAYLIST_CONTENT_RM_POSITIONS", adapter)
+        self.assertIn("MYMPD_API_PLAYLIST_CONTENT_MOVE_POSITION", adapter)
+        self.assertIn("installSelectionBar", player)
+        self.assertIn("askPlaylistName", player)
+        self.assertNotIn("renderLyrics", player)
+        self.assertIn("extractAccent", player)
+        self.assertIn("prefers-reduced-motion", styles)
+        self.assertNotIn('viewBox="0 0 1024 1024"', icons)
+        self.assertGreaterEqual(icons.count('viewBox="0 0 24 24"'), 20)
 
     def test_commercial_ui_accessibility_contract(self):
         static = Path(__file__).parent / "static"
@@ -248,11 +421,19 @@ class ProductionConfigTest(unittest.TestCase):
         tokens = (static / "styles" / "tokens.css").read_text(encoding="utf-8")
         self.assertGreaterEqual(self.contrast_ratio("#87502f", "#fbf7f1"), 4.5)
         self.assertIn('--brand-text: #87502f', tokens)
-        self.assertIn('aria-current="page"', index)
+        self.assertNotIn('aria-label="展开播放器"', index)
+        self.assertNotIn('aria-label="折叠播放器"', index)
+        self.assertIn('aria-label="退出登录"', index)
+        self.assertNotIn('<span>退出登录</span>', index)
         self.assertIn('aria-labelledby="loginTitle"', index)
         self.assertIn('aria-live="polite"', index)
         self.assertIn('app.js?v=', index)
-        self.assertIn('aria-pressed=', zones)
+        self.assertIn('class="speaker-toggle"', zones)
+        self.assertIn('class="speaker-settings"', zones)
+        self.assertIn('/api/snapcast/client-name', zones)
+        self.assertNotIn('class="device-tuning"', zones)
+        self.assertNotIn('id="themeSelect"', index)
+        self.assertNotIn('class="more-menu"', index)
         self.assertIn('clearPrivateState', app)
         self.assertIn('addEventListener("cancel", event => event.preventDefault())', app)
         self.assertIn('queueMicrotask(openLogin)', app)
@@ -263,7 +444,7 @@ class ProductionConfigTest(unittest.TestCase):
         sources = "\n".join(path.read_text(encoding="utf-8") for path in (
             static / "index.html", static / "app.js", static / "js" / "zones.js"
         ))
-        for state_copy in ("正在连接设备", "暂未发现设备", "网关连接中断", "需要重新登录"):
+        for state_copy in ("暂未发现设备", "网关连接中断", "需要重新登录"):
             self.assertIn(state_copy, sources)
         for engineering_copy in (">SYSTEM<", ">BATCH ACTION<", ">APPEARANCE<", ">ACCOUNT<", ">ZONE<", "UNKNOWN"):
             self.assertNotIn(engineering_copy, sources)

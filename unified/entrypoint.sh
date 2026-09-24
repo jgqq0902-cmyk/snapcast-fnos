@@ -16,6 +16,14 @@ mkdir -p /app/data/dlna/music /app/data/dlna/playlists /app/data/dlna/cache \
          /app/data/mympd/work /app/data/mympd/cache \
          /app/data/nginx/client_body /app/data/nginx/proxy /app/data/nginx/fastcgi \
          /app/data/nginx/uwsgi /app/data/nginx/scgi /app/data/nginx/logs
+radio_source=/app/unified/radio-stations.m3u
+radio_target=/app/data/dlna/playlists/网络收音机.m3u
+if [ -r "$radio_source" ] && { [ ! -f "$radio_target" ] || ! cmp -s "$radio_source" "$radio_target"; }; then
+    cp "$radio_source" "${radio_target}.tmp"
+    chmod 0644 "${radio_target}.tmp"
+    chown snapcast:snapcast "${radio_target}.tmp"
+    mv "${radio_target}.tmp" "$radio_target"
+fi
 if [ ! -e /app/data/dlna/library ] && [ ! -L /app/data/dlna/library ]; then
     ln -s /media/music /app/data/dlna/library
 fi

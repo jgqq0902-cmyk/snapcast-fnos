@@ -6,8 +6,9 @@
 
 - AirPlay 接收器：`Snapcast-AirPlay`（Shairport Sync）
 - DLNA Media Renderer：`Snapcast-DLNA`（upmpdcli + MPD）
-- myMPD 提供本地曲库、队列、歌单、封面和本地歌词
-- 按播放区域控制音源、音量、静音和客户端延迟
+- myMPD 作为音乐引擎提供本地曲库、队列、歌单、封面和本地歌词；普通用户使用项目自研的流体光域播放器
+- 内置经过去重整理的网络电台；容器启动后通过 myMPD 官方 API 幂等同步到“浏览 → 网络收音机 → 收藏”，同时保留“网络收音机”M3U 兼容歌单
+- 双栏控制台集中展示当前音源和正在发声的设备，支持 MPD 音源音量、设备激活和客户端延迟
 - `Default` Meta 流按 `Airplay/DLNA` 顺序选择，AirPlay 优先
 - 不连接在线元数据、图标 CDN、遥测或外部管理服务
 - DLNA 远程 HTTP/HTTPS 音源经过容器内回环续传代理；CDN 提前断开时使用字节 Range 从中断位置恢复
@@ -28,6 +29,9 @@
 | DLNA HTTP 续传与 MPD 代理 | `127.0.0.1:1790/6601` | 仅容器内部 |
 
 1780 和 1705 不再对 LAN 开放，避免绕过 Web 控制台鉴权。旧 Snapweb 因此不再作为外部入口；统一入口是 1781。仅在完全可信且隔离的家庭 LAN 中，才可将 `CONTROL_AUTH_ENABLED=false`。
+
+myMPD 的 `mympd_uri` 固定使用容器内 `http://127.0.0.1:1782`（末尾不带 `/`），供 MPD 回取原生网络电台播放列表；浏览器仍只能通过带控制台鉴权的 `/player/` 入口访问。
+myMPD 自身通过容器内 TCP `127.0.0.1:6600` 连接 MPD，以便正确解析 `mympd://webradio/...`；MPD 的 Unix Socket 继续供其他内部组件使用。
 
 登录在 nginx 按真实客户端地址限流，Control 只在 TCP 对端为 loopback 时信任 `X-Real-IP`。默认使用 HTTP，适合隔离的家庭 LAN；如网络包含访客或不可信设备，可将证书放入 `CERTS_DIR` 并设置：
 
@@ -70,6 +74,8 @@ docker exec snapcast /app/unified/smoke-test.sh
 冒烟测试包含未认证拦截、登录、myMPD 静态资源、WebSocket Upgrade 和退出后会话失效的完整生产代理链验证。
 
 `MEDIA_ROOT` 会只读挂载为容器内 `/media`。控制台和播放器不会修改音乐文件。持久化目录 `config/`、`data/`、`certs/`、`.env` 均已从 Git 排除。
+
+镜像启动时会将 `unified/radio-stations.m3u` 同步到 MPD 的持久化歌单目录，并在 myMPD 就绪后通过 `MYMPD_API_WEBRADIO_FAVORITE_SAVE` 同步为原生网络收音机收藏。已有同名同地址电台不会重复写入。更新电台表可重新运行 `python unified/import-radio-mhtml.py <保存网页.mhtml> unified/radio-stations.m3u`，随后重建镜像。
 
 也可在已经运行旧版本时使用部署脚本。它会备份运行配置与旧镜像，校验密码，构建、切换并执行冒烟测试：
 
@@ -140,18 +146,20 @@ docker compose up -d --remove-orphans --wait --wait-timeout 180
 
 ## Web 结构
 
-1781 的 Snap / Room 控制台采用原生 ES Modules，默认进入设备页，负责 Snapcast 音源、音量、静音、延迟、设备重命名与播放组管理：
+1781 的 Snap / Room 控制台采用原生 ES Modules。首页左侧直接承载完整的五标签 myMPD 播放器，右侧显示精简设备控制，移动端自动改为单列：
 
-- `control/static/js/`：API、状态、设备、播放组与通用 UI
-- `control/static/styles/`：令牌、基础、布局、设备卡片与响应式样式
-- `control/static/icons/`：本地 SVG Sprite；来源和许可见 `NOTICE.md`
+- `control/static/js/`：设备状态、播放进度、myMPD JSON-RPC/WebSocket 适配器与播放器 UI
+- `control/static/styles/`：令牌、基础、双栏设备页、流体光域播放器与响应式样式
+- `control/static/icons.svg`、`control/static/art/`：原创本地图标 Sprite 与空状态美术；说明见 `icons/NOTICE.md`
 
-“播放器”页通过同源 `/player/` 全屏嵌入未修改的 myMPD，并保留重新加载和新窗口打开入口。myMPD 只监听容器回环地址，访问统一受控制台会话保护；其状态持久化在 `data/mympd`，并连接同容器内的 MPD Unix socket。
+控制服务会把 Snapclient 收敛到单一“主播放组”；停用设备通过静音实现并保留原音量。控制页不暴露底层 AirPlay、DLNA、Default 流选择，`Default` 会自动让 AirPlay 优先于 MPD/DLNA。音源音量直接控制 MPD 软件混音器，AirPlay 音量由发送端控制。MPD/DLNA 显示平滑进度，时长已知的本地或远程音频支持跳转；AirPlay 和直播流不会显示虚假可拖动进度。
+
+首页与全屏模式复用同一个原生 ES Modules 播放器实例，通过同源 `/player/api/default` 与 `/player/ws/default` 使用 myMPD 的 JSON-RPC 和通知协议。五个标签依次为播放、队列、歌单、电台、曲库并默认打开播放；展开按钮将同一实例切换为全屏，折叠后保留当前标签与播放状态。曲库搜索结果支持多选或全选后加入已有/新建歌单；歌单支持重命名、删除、移除及调整曲目顺序；队列可由 myMPD 从曲库随机生成 50 首。所有数据与操作均由 myMPD 提供，前端不建立第二套曲库或歌单存储。原版 myMPD 仍保留在受同一认证保护的 `/player/`，仅作为维护和升级验证入口。
 
 设备页的“立即停止”会停止 MPD（保留队列）并断开当前 AirPlay 会话，不会修改任何设备的音量、静音、延迟或播放组。AirPlay 优先使用 Shairport Sync 的 D-Bus `DropSession`；接口不可用时由固定的无参数辅助脚本终止接收进程，Supervisor 随即恢复接收服务。
 
 upmpdcli 只连接回环 MPD 命令代理 `127.0.0.1:6601`。代理仅改写 DLNA 提交的 HTTP/HTTPS 播放地址，本地曲库和 myMPD 仍直接连接 MPD `6600`。对应的 HTTP 续传服务只监听 `127.0.0.1:1790`，不会成为 LAN 通用代理；上游连接提前结束时按当前字节位置重试，默认最多连续重试 10 次并采用退避等待。带签名 URL 已失效、源站不允许续传或控制端主动停止时不会伪造成功。
 
-控制台以 WCAG 2.2 AA 为验收基线：浅色主题的小号强调文字使用独立高对比度铜棕色；主导航和音源选择暴露当前 ARIA 状态；登录弹窗不可通过 ESC 或背景点击关闭。退出登录或会话过期会立即清空设备、音源及播放器 iframe。设备页对连接中、空设备、网关离线、部分设备离线和会话失效分别提供明确状态与恢复入口。
+控制台以 WCAG 2.2 AA 为验收基线：浅色主题的小号强调文字使用独立高对比度铜棕色；主导航暴露当前 ARIA 状态；登录弹窗不可通过 ESC 或背景点击关闭。退出登录或会话过期会立即清空设备、音源及播放器状态并断开 myMPD WebSocket。设备页对连接中、空设备、网关离线、部分设备离线和会话失效分别提供明确状态与恢复入口。
 
 前端发布前应在浅色和深色主题下检查 `1440×900`、`1280×720`、`1024×768`、`900×1200`、`768×1024`、`430×932`、`390×844`、`375×812` 与 `320×568`；至少覆盖空设备、在线、部分离线、长名称、登录和会话过期状态。`control.test_app.ProductionConfigTest` 固化对比度、ARIA、认证清理、状态文案和移动端布局契约，避免常见视觉回归。

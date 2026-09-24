@@ -2,6 +2,7 @@ export const state = {
   system: { hostname: "本机网关", healthy: false },
   auth: { enabled: true, configured: false, authenticated: false },
   player: { state: "stop", song: {}, capabilities: {} },
+  playerSyncedAt: 0,
   sources: [],
   zones: [],
   selectedZoneId: localStorage.getItem("snaproomZone") || "",

@@ -6,6 +6,7 @@ import hmac
 import ipaddress
 import itertools
 import json
+import math
 import mimetypes
 import os
 import secrets
@@ -51,6 +52,7 @@ SESSIONS: dict[str, float] = {}
 LOGIN_ATTEMPTS: dict[str, deque[float]] = defaultdict(deque)
 HEALTH_LOCK = threading.Lock()
 HEALTH_STATE: dict[str, Any] = {"ok": False, "updatedAt": 0, "components": {}}
+MAIN_GROUP_NAME = os.environ.get("SNAPCAST_MAIN_GROUP_NAME", "主播放组").strip() or "主播放组"
 
 
 class ControlError(RuntimeError):
@@ -225,14 +227,49 @@ def song_payload(song: dict[str, Any]) -> dict[str, Any]:
 def player_state() -> dict[str, Any]:
     status = parse_mpd(mpd_command("status"))
     song = song_payload(parse_mpd(mpd_command("currentsong")))
+    duration = float(status.get("duration", song["duration"]) or 0)
+    uri = song["file"].strip()
+    scheme = urlparse(uri).scheme.casefold()
+    playing = status.get("state", "stop") in {"play", "pause"}
+    if scheme in {"http", "https"}:
+        origin = "radio" if duration <= 0 else "dlna"
+    elif uri:
+        origin = "local"
+    else:
+        origin = "unknown"
     return {
         "state": status.get("state", "stop"),
         "elapsed": float(status.get("elapsed", 0) or 0),
-        "duration": float(status.get("duration", song["duration"]) or 0),
+        "duration": duration,
         "song": song,
         "audio": status.get("audio", ""),
+        "volume": min(100, max(0, int(status.get("volume", 0) or 0))),
         "sourceType": "mpd",
+        "origin": origin,
+        "live": playing and origin == "radio",
+        "seekable": playing and duration > 0 and origin in {"local", "dlna"},
     }
+
+
+def seek_player(position: Any) -> dict[str, Any]:
+    try:
+        target = float(position)
+    except (TypeError, ValueError) as exc:
+        raise ControlError("播放位置必须是秒数") from exc
+    if not math.isfinite(target):
+        raise ControlError("播放位置无效")
+    current = player_state()
+    if not current["seekable"]:
+        raise ControlError("当前音源不支持跳转")
+    target = max(0.0, min(target, current["duration"]))
+    mpd_command(f"seekcur {target:.3f}")
+    return player_state()
+
+
+def set_player_volume(percent: Any) -> dict[str, Any]:
+    value = clamp_int(percent, 0, 100, "音源音量")
+    mpd_command(f"setvol {value}")
+    return player_state()
 
 
 def source_type(stream_id: Any) -> str:
@@ -255,7 +292,8 @@ def source_descriptor(stream: dict[str, Any], active_kind: str = "") -> dict[str
 def normalized_snapcast_state() -> dict[str, Any]:
     server = snap_rpc("Server.GetStatus")["server"]
     raw_streams = server.get("streams", [])
-    active_kind = next((source_type(item.get("id")) for item in raw_streams if item.get("status") == "playing" and source_type(item.get("id")) != "auto"), "mpd")
+    playing_kinds = {source_type(item.get("id")) for item in raw_streams if item.get("status") == "playing"}
+    active_kind = "airplay" if "airplay" in playing_kinds else "mpd"
     streams = [source_descriptor(stream, active_kind) for stream in raw_streams]
     streams_by_id = {stream["id"]: stream for stream in streams}
     groups = []
@@ -271,20 +309,25 @@ def normalized_snapcast_state() -> dict[str, Any]:
                 "latency": int(config.get("latency", 0)),
                 "volume": int(volume.get("percent", 0)),
                 "muted": bool(volume.get("muted", False)),
+                "active": not bool(volume.get("muted", False)),
                 "ip": client.get("host", {}).get("ip", "").replace("::ffff:", ""),
                 "version": client.get("snapclient", {}).get("version", ""),
             })
         stream_id = group.get("stream_id", "")
         connected = [client for client in clients if client["connected"]]
         source = streams_by_id.get(stream_id, source_descriptor({"id": stream_id}, active_kind))
+        source_playing = source.get("status") == "playing"
+        for client in clients:
+            client["audible"] = bool(client["connected"] and client["active"] and source_playing and not group.get("muted", False))
         groups.append({
             "id": group["id"], "name": group.get("name") or "播放组", "streamId": stream_id,
             "sourceType": source["effectiveSourceType"], "source": source,
             "muted": bool(group.get("muted", False)),
-            "volume": max((client["volume"] for client in connected), default=0),
+            "volume": max((client["volume"] for client in connected if client["active"]), default=0),
             "connectedCount": len(connected), "clients": clients,
         })
-    return {"streams": streams, "groups": groups}
+    main_group = max(groups, key=lambda item: len(item["clients"]), default=None)
+    return {"streams": streams, "groups": groups, "mainGroupId": main_group["id"] if main_group else ""}
 
 
 def set_zone_volume(group_id: Any, percent: Any, muted: bool = False) -> list[Any]:
@@ -293,9 +336,50 @@ def set_zone_volume(group_id: Any, percent: Any, muted: bool = False) -> list[An
     group = next((item for item in normalized_snapcast_state()["groups"] if item["id"] == identifier), None)
     if group is None:
         raise ControlError("播放区域不存在")
-    connected = [client for client in group["clients"] if client["connected"]]
+    connected = [client for client in group["clients"] if client["connected"] and client.get("active", not client.get("muted", False))]
+    if not connected:
+        raise ControlError("没有已激活的在线设备")
     peak = max((client["volume"] for client in connected), default=0)
     return [snap_rpc("Client.SetVolume", {"id": client["id"], "volume": {"muted": muted, "percent": value if peak == 0 else min(100, int(client["volume"] * value / peak + 0.5))}}) for client in connected]
+
+
+def set_client_active(client_id: Any, active: Any) -> dict[str, Any]:
+    identifier = str(client_id or "")
+    if not isinstance(active, bool):
+        raise ControlError("激活状态必须为布尔值")
+    with GROUP_MUTATION_LOCK:
+        state = normalized_snapcast_state()
+        _, clients = snapcast_indexes(state)
+        client = clients.get(identifier)
+        if client is None:
+            raise ControlError("设备不存在")
+        snap_rpc("Client.SetVolume", {"id": identifier, "volume": {"muted": not active, "percent": client["volume"]}})
+        return normalized_snapcast_state()
+
+
+def reconcile_main_group() -> dict[str, Any]:
+    """Idempotently collapse all registered clients into one Default group."""
+    with GROUP_MUTATION_LOCK:
+        state = normalized_snapcast_state()
+        groups = [group for group in state["groups"] if group["clients"]]
+        if not groups:
+            return state
+        target = max(groups, key=lambda item: (len(item["clients"]), item["id"] == state.get("mainGroupId")))
+        client_ids = list(dict.fromkeys(
+            client["id"] for group in [target, *[item for item in groups if item["id"] != target["id"]]] for client in group["clients"]
+        ))
+        target_ids = [client["id"] for client in target["clients"]]
+        topology_changed = len(groups) > 1 or target_ids != client_ids
+        first_reconciliation = target.get("name") != MAIN_GROUP_NAME
+        if topology_changed:
+            snap_rpc("Group.SetClients", {"id": target["id"], "clients": client_ids})
+            state = normalized_snapcast_state()
+            target = next((group for group in state["groups"] if client_ids[0] in {client["id"] for client in group["clients"]}), target)
+        if target.get("name") != MAIN_GROUP_NAME:
+            snap_rpc("Group.SetName", {"id": target["id"], "name": MAIN_GROUP_NAME})
+        if (topology_changed or first_reconciliation) and target.get("streamId") != "Default":
+            snap_rpc("Group.SetStream", {"id": target["id"], "stream_id": "Default"})
+        return normalized_snapcast_state()
 
 
 def snap_name(value: Any, label: str) -> str:
@@ -520,6 +604,15 @@ def health_monitor() -> None:
         time.sleep(HEALTH_INTERVAL)
 
 
+def topology_monitor() -> None:
+    while True:
+        try:
+            reconcile_main_group()
+        except ControlError as exc:
+            print(f"Main group reconciliation deferred: {exc}", flush=True)
+        time.sleep(max(10, HEALTH_INTERVAL * 2))
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "SnapRoom/4.0"
 
@@ -638,6 +731,8 @@ class Handler(BaseHTTPRequestHandler):
                 result = snap_rpc("Client.SetLatency", {"id": str(body.get("clientId", "")), "latency": clamp_int(body.get("latency"), -1000, 5000, "延迟")})
             elif path == "/api/snapcast/group-volume":
                 result = set_zone_volume(body.get("groupId", ""), body.get("percent"), bool(body.get("muted", False)))
+            elif path == "/api/snapcast/client-active":
+                result = set_client_active(body.get("clientId"), body.get("active"))
             elif path == "/api/snapcast/stream":
                 result = snap_rpc("Group.SetStream", {"id": str(body.get("groupId", "")), "stream_id": str(body.get("streamId", ""))})
             elif path == "/api/snapcast/all-stream":
@@ -655,6 +750,10 @@ class Handler(BaseHTTPRequestHandler):
                 result = merge_groups(body.get("sourceGroupId"), body.get("targetGroupId"))
             elif path == "/api/sources/stop-all":
                 result = stop_all_sources()
+            elif path == "/api/player/seek":
+                result = seek_player(body.get("position"))
+            elif path == "/api/player/volume":
+                result = set_player_volume(body.get("percent"))
             else:
                 self.send_error(HTTPStatus.NOT_FOUND); return
             self.json_response({"ok": True, "result": result})
@@ -669,6 +768,7 @@ class Handler(BaseHTTPRequestHandler):
 
 def main() -> None:
     threading.Thread(target=health_monitor, name="health-monitor", daemon=True).start()
+    threading.Thread(target=topology_monitor, name="topology-monitor", daemon=True).start()
     server = ThreadingHTTPServer((CONTROL_HOST, CONTROL_PORT), Handler)
     server.daemon_threads = True
     print(f"Snap / Room listening on {CONTROL_HOST}:{CONTROL_PORT}", flush=True)

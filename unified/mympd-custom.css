@@ -1,0 +1,50 @@
+/* Snap / Room managed myMPD skin. Updated with the container image. */
+:root {
+  --snap-bg: #f4eee6;
+  --snap-surface: #fbf7f1;
+  --snap-surface-2: #ece4da;
+  --snap-text: #2d2521;
+  --snap-muted: #756b65;
+  --snap-accent: #d18a59;
+  --snap-line: rgba(69, 54, 45, .13);
+  --bs-body-bg: var(--snap-bg);
+  --bs-body-color: var(--snap-text);
+  --bs-primary: var(--snap-accent);
+  --bs-border-color: var(--snap-line);
+  --bs-border-radius: 12px;
+  --bs-border-radius-lg: 18px;
+}
+[data-bs-theme="dark"], .dark, body.dark {
+  --snap-bg: #171312;
+  --snap-surface: #27211f;
+  --snap-surface-2: #352c28;
+  --snap-text: #f7eee4;
+  --snap-muted: #b8aaa0;
+  --snap-line: rgba(255, 242, 230, .12);
+  --bs-body-bg: var(--snap-bg);
+  --bs-body-color: var(--snap-text);
+  --bs-border-color: var(--snap-line);
+}
+html, body { background: var(--snap-bg) !important; color: var(--snap-text) !important; }
+body { font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif !important; }
+.navbar, .offcanvas, .modal-content, .dropdown-menu, .popover, .card, footer, #footer { background-color: color-mix(in srgb, var(--snap-surface) 94%, transparent) !important; border-color: var(--snap-line) !important; }
+.navbar, footer, #footer { backdrop-filter: blur(22px); }
+.card, .modal-content, .dropdown-menu, .popover { border-radius: 18px !important; box-shadow: 0 18px 48px rgba(30, 18, 12, .1) !important; }
+.btn { min-height: 40px; border-radius: 12px !important; font-weight: 650; }
+.btn-primary, .bg-primary, .progress-bar { background-color: var(--snap-accent) !important; border-color: var(--snap-accent) !important; color: #211713 !important; }
+.btn-outline-primary { border-color: color-mix(in srgb, var(--snap-accent) 62%, transparent) !important; color: var(--snap-accent) !important; }
+.form-control, .form-select, input, select { border-color: var(--snap-line) !important; border-radius: 12px !important; background-color: var(--snap-surface) !important; color: var(--snap-text) !important; }
+.table { --bs-table-bg: transparent; --bs-table-color: var(--snap-text); --bs-table-border-color: var(--snap-line); }
+.table > :not(caption) > * > * { padding-block: .72rem; }
+.text-secondary, .text-muted { color: var(--snap-muted) !important; }
+a, .nav-link.active, .navbar .active { color: var(--snap-accent) !important; }
+.progress { height: 5px !important; border-radius: 999px !important; background: color-mix(in srgb, var(--snap-text) 14%, transparent) !important; }
+@media (max-width: 700px) {
+  .container-fluid { padding-inline: 12px !important; }
+  .card { border-radius: 15px !important; }
+  .table > :not(caption) > * > * { padding: .62rem .45rem; }
+  .btn { min-height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}

@@ -6,57 +6,48 @@
   <meta id="themeColor" name="theme-color" content="#171312">
   <title>Snap / Room</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='25' fill='%23d18a59'/%3E%3Ccircle cx='32' cy='32' r='9' fill='%23171312'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="/styles/tokens.css?v=20260922-ui1">
-  <link rel="stylesheet" href="/styles/base.css?v=20260922-ui1">
-  <link rel="stylesheet" href="/styles/layout.css?v=20260922-ui1">
-  <link rel="stylesheet" href="/styles/components.css?v=20260922-ui1">
-  <link rel="stylesheet" href="/styles/rooms.css?v=20260922-ui1">
-  <link rel="stylesheet" href="/styles/device-console.css?v=20260922-ui1">
-  <link rel="stylesheet" href="/styles/group-manager.css?v=20260922-ui1">
-  <link rel="stylesheet" href="/styles/responsive.css?v=20260922-ui1">
+  <link rel="stylesheet" href="/styles/tokens.css?v=20260923-dual1">
+  <link rel="stylesheet" href="/styles/base.css?v=20260923-dual1">
+  <link rel="stylesheet" href="/styles/layout.css?v=20260925-compact">
+  <link rel="stylesheet" href="/styles/components.css?v=20260923-dual1">
+  <link rel="stylesheet" href="/styles/rooms.css?v=20260925-compact">
+  <link rel="stylesheet" href="/styles/device-console.css?v=20260923-dual1">
+  <link rel="stylesheet" href="/styles/group-manager.css?v=20260923-dual1">
+  <link rel="stylesheet" href="/styles/player.css?v=20260925-compact">
+  <link rel="stylesheet" href="/styles/responsive.css?v=20260925-compact">
 </head>
 <body>
   <div class="atmosphere" aria-hidden="true"></div>
   <div class="app-shell device-shell">
-    <aside class="sidebar">
-      <a class="brand" href="#devices" aria-label="Snap / Room 设备"><span class="brand-disc"></span><b>SNAP</b><i>/</i>ROOM</a>
-      <nav class="primary-nav" aria-label="主功能">
-        <button class="active" data-route="devices" aria-current="page"><svg><use href="/icons.svg#icon-speaker"/></svg><span>设备</span><em id="zoneCount">0</em></button>
-        <button data-route="player"><svg><use href="/icons.svg#icon-library"/></svg><span>播放器</span></button>
-        <button data-route="settings"><svg><use href="/icons.svg#icon-menu"/></svg><span>设置</span></button>
-      </nav>
-      <div class="connection"><span id="healthLamp"></span><div><b id="healthText">正在连接</b><small id="gatewayName">本机网关</small></div></div>
-    </aside>
-
     <main class="workspace">
       <section class="view active" data-page="devices">
-        <header class="page-header"><div><p>SNAP / ROOM</p><h1>设备</h1></div><div class="header-actions"><button class="stop-all-btn" id="stopAllSources" aria-label="立即停止所有音源"><svg><use href="/icons.svg#icon-stop"/></svg><span>立即停止</span></button><button class="secondary-btn" id="manageGroups" aria-label="管理播放组"><svg><use href="/icons.svg#icon-network"/></svg><span>管理播放组</span></button><button class="icon-btn" id="refreshRooms" aria-label="重新扫描设备"><svg><use href="/icons.svg#icon-reset"/></svg></button></div></header>
-        <div id="zoneList" class="zone-grid" aria-live="polite" aria-busy="true"><section class="state-panel is-loading"><svg class="state-mark" aria-hidden="true"><use href="/icons.svg#icon-speaker"/></svg><h2>正在连接设备</h2><p>正在读取播放组与音源状态…</p></section></div>
-      </section>
-
-      <section class="view player-view" data-page="player">
-        <header class="player-toolbar"><div><button class="icon-btn player-back" data-route="devices" aria-label="返回设备"><svg><use href="/icons.svg#icon-collapse"/></svg></button><p>MYMPD</p><strong>播放器</strong></div><div><button class="secondary-btn" id="reloadPlayer" aria-label="重新加载播放器"><svg><use href="/icons.svg#icon-reset"/></svg><span>重新加载</span></button><a class="icon-btn" id="openPlayerWindow" href="/player/" target="_blank" rel="noopener" aria-label="在新窗口打开"><svg><use href="/icons.svg#icon-expand"/></svg></a></div></header>
-        <div class="player-frame-shell"><div class="player-frame-placeholder" id="playerPlaceholder"><span class="brand-disc large"></span><b>播放器准备就绪</b><small>登录后首次进入时加载 myMPD</small></div><iframe id="mympdFrame" title="myMPD 播放器" loading="lazy"></iframe></div>
-      </section>
-
-      <section class="view" data-page="settings">
-        <header class="page-header"><div><p>系统设置</p><h1>设置</h1></div></header>
-        <div class="settings-grid">
-          <section class="settings-card"><small>播放器</small><h2>myMPD</h2><p>曲库、封面、歌词、队列和歌单由 myMPD 管理。</p><a id="settingsPlayerLink" class="accent-btn" href="/player/">进入播放器</a></section>
-          <section class="settings-card"><small>批量操作</small><h2>全部设备音源</h2><div id="allSourceList" class="source-list"></div></section>
-          <section class="settings-card"><small>外观</small><h2>主题</h2><label class="setting-row"><span>配色</span><select id="themeSelect"><option value="system">跟随系统</option><option value="dark">深色</option><option value="light">浅色</option></select></label></section>
-          <section class="settings-card"><small>账户</small><h2>控制台登录</h2><p id="accountState">正在读取认证状态…</p><button class="secondary-btn" id="logoutButton">退出登录</button></section>
+        <header class="page-header console-header">
+          <a class="brand console-brand" href="#devices" aria-label="Snap / Room 首页"><span class="brand-disc"></span><b>SNAP</b><i>/</i>ROOM</a>
+          <div class="header-actions">
+            <button class="icon-btn" id="refreshRooms" aria-label="刷新状态"><svg><use href="/icons.svg#icon-reset"/></svg></button>
+            <button class="logout-btn" id="logoutButton" aria-label="退出登录"><svg><use href="/icons.svg#icon-logout"/></svg></button>
+          </div>
+          <span id="deviceCount" hidden>0</span><span id="healthLamp" hidden></span><span id="healthText" hidden></span><span id="gatewayName" hidden></span><span id="accountState" hidden></span>
+        </header>
+        <div id="dashboard" class="dashboard" aria-live="polite" aria-busy="true">
+          <section class="lightfield-player embedded-player active" id="playerPanel" aria-label="播放器">
+            <div class="player-aurora" aria-hidden="true"><i></i><i></i><i></i></div>
+            <header class="player-toolbar lightfield-toolbar"><span class="engine-state" id="playerEngineState"><i></i><span>正在连接</span></span></header>
+            <div class="player-layout">
+              <nav class="player-tabs" aria-label="播放器内容"><button class="active" data-player-view="now"><svg><use href="/icons.svg#icon-play-filled"/></svg><span>播放</span></button><button data-player-view="queue"><svg><use href="/icons.svg#icon-queue"/></svg><span>队列</span></button><button data-player-view="playlists"><svg><use href="/icons.svg#icon-playlist"/></svg><span>歌单</span></button><button data-player-view="radio"><svg><use href="/icons.svg#icon-radio"/></svg><span>电台</span></button><button data-player-view="library"><svg><use href="/icons.svg#icon-library"/></svg><span>曲库</span></button></nav>
+              <aside class="player-now" id="playerNow"><div class="cover-orbit"><div class="cover-shell"><img id="playerCover" src="/art/album-placeholder.svg" alt="当前封面"><span class="cover-groove"></span></div></div><div class="player-track-copy"><small id="playerOrigin">本地播放器</small><h1 id="playerTitle">等待播放</h1><p id="playerArtist">从曲库、歌单或网络电台开始</p></div><div class="player-timeline"><input id="playerSeek" type="range" min="0" max="1" value="0" aria-label="播放进度"><div><time id="playerElapsed">0:00</time><time id="playerDuration">--:--</time></div></div><div class="transport" aria-label="播放控制"><button data-player-action="prev" aria-label="上一首"><svg><use href="/icons.svg#icon-previous"/></svg></button><button class="transport-main" data-player-action="toggle" aria-label="播放或暂停"><svg><use id="playerToggleIcon" href="/icons.svg#icon-play-filled"/></svg></button><button data-player-action="next" aria-label="下一首"><svg><use href="/icons.svg#icon-next"/></svg></button><button data-player-action="stop" aria-label="停止"><svg><use href="/icons.svg#icon-stop"/></svg></button></div><details class="player-volume-popover"><summary aria-label="调节播放器音量" title="音量"><svg><use href="/icons.svg#icon-volume"/></svg></summary><label><input id="playerVolume" type="range" min="0" max="100" value="0" aria-label="播放器音量"><output id="playerVolumeValue">0</output></label></details></aside>
+              <section class="player-browser"><header class="player-content-head"><div><small id="playerViewEyebrow">UP NEXT</small><h2 id="playerViewTitle">播放队列</h2></div><label class="player-search"><svg><use href="/icons.svg#icon-search"/></svg><input id="playerSearch" type="search" placeholder="搜索曲目、歌手或专辑" aria-label="搜索播放器内容" hidden></label></header><div class="player-content" id="playerContent" aria-live="polite" aria-busy="true"><div class="player-loading"><span></span><b>正在读取音乐引擎</b></div></div></section>
+            </div>
+          </section>
+          <div id="devicePanelHost"><section class="state-panel is-loading"><svg class="state-mark" aria-hidden="true"><use href="/icons.svg#icon-speaker"/></svg></section></div>
         </div>
       </section>
     </main>
   </div>
 
   <dialog id="loginDialog" class="modal" data-static aria-labelledby="loginTitle" aria-describedby="loginHint"><form class="dialog-card login-card" id="loginForm"><span class="brand-disc large" aria-hidden="true"></span><small>SNAP / ROOM</small><h2 id="loginTitle">登录控制台</h2><p id="loginHint">请输入本地管理员凭据</p><label><span>用户名</span><input id="loginUsername" autocomplete="username" required></label><label><span>密码</span><input id="loginPassword" type="password" autocomplete="current-password" required></label><button class="accent-btn">登录</button></form></dialog>
-  <dialog id="groupsDialog" class="modal" aria-labelledby="groupsTitle"><div class="dialog-card group-manager-card"><header><div><small>播放组</small><h2 id="groupsTitle">管理播放组</h2></div><button class="icon-btn" data-close-dialog aria-label="关闭"><svg><use href="/icons.svg#icon-close"/></svg></button></header><div id="groupManager"></div><footer><button class="accent-btn" id="createGroupButton"><svg><use href="/icons.svg#icon-plus"/></svg>新建播放组</button></footer></div></dialog>
-  <dialog id="groupFormDialog" class="modal" aria-labelledby="groupFormTitle"><form class="dialog-card group-form-card" id="groupForm"><small id="groupFormEyebrow">播放组</small><h2 id="groupFormTitle">编辑播放组</h2><label id="groupNameField"><span>名称</span><input id="groupNameInput" maxlength="64" required></label><label id="groupStreamField"><span>音源</span><select id="groupStreamInput"></select></label><fieldset id="groupClientField"><legend>设备（至少一台）</legend><div id="groupClientOptions" class="client-options"></div></fieldset><label id="mergeTargetField"><span>合并到</span><select id="mergeTargetInput"></select></label><div class="dialog-actions"><button type="button" class="secondary" data-close-dialog>取消</button><button class="accent-btn" id="groupFormSubmit">保存</button></div></form></dialog>
-  <dialog id="nameDialog" class="modal" aria-labelledby="nameTitle"><form class="dialog-card compact-dialog" id="nameForm"><small>名称</small><h2 id="nameTitle">重命名</h2><label><span>新名称</span><input id="nameInput" maxlength="64" required></label><div class="dialog-actions"><button type="button" class="secondary" data-close-dialog>取消</button><button class="accent-btn">保存</button></div></form></dialog>
   <dialog id="confirmDialog" class="modal" aria-labelledby="confirmTitle" aria-describedby="confirmMessage"><form class="dialog-card compact-dialog" id="confirmForm"><h2 id="confirmTitle">请确认</h2><p id="confirmMessage"></p><div class="dialog-actions"><button type="button" class="secondary" data-close-dialog>取消</button><button class="danger-action">确认</button></div></form></dialog>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script type="module" src="/app.js?v=20260922-ui1"></script>
+  <script type="module" src="/app.js?v=20260925-compact"></script>
 </body>
 </html>
