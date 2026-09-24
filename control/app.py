@@ -446,7 +446,8 @@ def combined_state() -> dict[str, Any]:
         player = {"available": True, **player_state()}
     except ControlError as exc:
         errors.append(str(exc))
-    return {"snapcast": snapcast, "mainGroup": snapcast.get("mainGroup"), "zones": snapcast.get("groups", []), "sources": snapcast.get("streams", []), "player": player, "system": {"hostname": socket.gethostname()}, "errors": errors}
+    health = health_snapshot()
+    return {"snapcast": snapcast, "mainGroup": snapcast.get("mainGroup"), "zones": snapcast.get("groups", []), "sources": snapcast.get("streams", []), "player": player, "system": {"hostname": socket.gethostname(), **health}, "errors": errors}
 
 
 def refresh_health() -> dict[str, Any]:

@@ -1,19 +1,19 @@
 <!doctype html>
-<html lang="zh-CN" data-theme="system">
+<html lang="zh-CN" data-theme="dark">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta id="themeColor" name="theme-color" content="#171312">
   <title>Snap / Room</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='25' fill='%23d18a59'/%3E%3Ccircle cx='32' cy='32' r='9' fill='%23171312'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="/styles/tokens.css?v=20260923-dual1">
+  <link rel="stylesheet" href="/styles/tokens.css?v=20260925-auditv3">
   <link rel="stylesheet" href="/styles/base.css?v=20260923-dual1">
-  <link rel="stylesheet" href="/styles/layout.css?v=20260925-compact">
+  <link rel="stylesheet" href="/styles/layout.css?v=20260925-auditv3">
   <link rel="stylesheet" href="/styles/components.css?v=20260923-dual1">
-  <link rel="stylesheet" href="/styles/rooms.css?v=20260925-compact">
+  <link rel="stylesheet" href="/styles/rooms.css?v=20260925-auditv3">
   <link rel="stylesheet" href="/styles/device-console.css?v=20260923-dual1">
-  <link rel="stylesheet" href="/styles/player.css?v=20260925-compact">
-  <link rel="stylesheet" href="/styles/responsive.css?v=20260925-compact">
+  <link rel="stylesheet" href="/styles/player.css?v=20260925-auditv3">
+  <link rel="stylesheet" href="/styles/responsive.css?v=20260925-auditv3">
 </head>
 <body>
   <div class="atmosphere" aria-hidden="true"></div>
@@ -23,10 +23,11 @@
         <header class="page-header console-header">
           <a class="brand console-brand" href="#devices" aria-label="Snap / Room 首页"><span class="brand-disc"></span><b>SNAP</b><i>/</i>ROOM</a>
           <div class="header-actions">
+            <details class="system-health" id="systemHealth"><summary><i id="healthLamp"></i><span id="healthText">正在连接</span></summary><div><p><span>Snapserver</span><b id="healthSnapserver">检查中</b></p><p><span>MPD</span><b id="healthMpd">检查中</b></p><p><span>myMPD</span><b id="healthMympd">检查中</b></p></div></details>
             <button class="icon-btn" id="refreshRooms" aria-label="刷新状态"><svg><use href="/icons.svg#icon-reset"/></svg></button>
             <button class="logout-btn" id="logoutButton" aria-label="退出登录"><svg><use href="/icons.svg#icon-logout"/></svg></button>
           </div>
-          <span id="deviceCount" hidden>0</span><span id="healthLamp" hidden></span><span id="healthText" hidden></span><span id="gatewayName" hidden></span><span id="accountState" hidden></span>
+          <span id="deviceCount" hidden>0</span><span id="gatewayName" hidden></span><span id="accountState" hidden></span>
         </header>
         <div id="dashboard" class="dashboard" aria-live="polite" aria-busy="true">
           <section class="lightfield-player embedded-player active" id="playerPanel" aria-label="播放器">
@@ -47,6 +48,6 @@
   <dialog id="loginDialog" class="modal" data-static aria-labelledby="loginTitle" aria-describedby="loginHint"><form class="dialog-card login-card" id="loginForm"><span class="brand-disc large" aria-hidden="true"></span><small>SNAP / ROOM</small><h2 id="loginTitle">登录控制台</h2><p id="loginHint">请输入本地管理员凭据</p><label><span>用户名</span><input id="loginUsername" autocomplete="username" required></label><label><span>密码</span><input id="loginPassword" type="password" autocomplete="current-password" required></label><button class="accent-btn">登录</button></form></dialog>
   <dialog id="confirmDialog" class="modal" aria-labelledby="confirmTitle" aria-describedby="confirmMessage"><form class="dialog-card compact-dialog" id="confirmForm"><h2 id="confirmTitle">请确认</h2><p id="confirmMessage"></p><div class="dialog-actions"><button type="button" class="secondary" data-close-dialog>取消</button><button class="danger-action">确认</button></div></form></dialog>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script type="module" src="/app.js?v=20260925-compact"></script>
+  <script type="module" src="/app.js?v=20260925-auditv3"></script>
 </body>
 </html>

@@ -1,23 +1,23 @@
 :root {
-  color-scheme: light;
-  --bg: #f4eee6;
-  --surface-1: rgb(255 252 247 / .78);
-  --surface-2: rgb(236 228 218 / .82);
-  --surface-solid: #fbf7f1;
-  --text-primary: #2d2521;
-  --text-secondary: #756b65;
-  --line: rgb(69 54 45 / .13);
+  color-scheme: dark;
+  --bg: #171312;
+  --surface-1: rgb(41 34 31 / .78);
+  --surface-2: rgb(53 44 40 / .82);
+  --surface-solid: #27211f;
+  --text-primary: #f7eee4;
+  --text-secondary: #b8aaa0;
+  --line: rgb(255 242 230 / .12);
   --brand: #d18a59;
-  --brand-text: #87502f;
+  --brand-text: #e5a77a;
   --brand-soft: rgb(209 138 89 / .18);
-  --brand-border: rgb(135 80 47 / .38);
+  --brand-border: rgb(229 167 122 / .42);
   --art-accent: #d18a59;
   --art-accent-soft: rgb(209 138 89 / .18);
   --on-art-accent: #211713;
   --success: #7cad72;
   --danger: #bd655e;
   --danger-soft: rgb(189 101 94 / .14);
-  --shadow-1: 0 22px 60px rgb(80 54 39 / .12);
+  --shadow-1: 0 26px 70px rgb(0 0 0 / .28);
   --radius-sm: 12px;
   --radius-md: 18px;
   --radius-lg: 28px;
@@ -40,44 +40,10 @@
   --weight-regular: 400;
   --weight-medium: 600;
   --weight-semibold: 700;
-  --state-hover: rgb(45 37 33 / .07);
-  --state-pressed: rgb(45 37 33 / .13);
+  --state-hover: rgb(255 242 230 / .08);
+  --state-pressed: rgb(255 242 230 / .14);
   --state-selected: var(--brand-soft);
   --motion-fast: 120ms;
   --motion-normal: 180ms;
   --motion-slow: 280ms;
-}
-
-:root[data-theme="dark"] {
-  color-scheme: dark;
-  --bg: #171312;
-  --surface-1: rgb(41 34 31 / .78);
-  --surface-2: rgb(53 44 40 / .82);
-  --surface-solid: #27211f;
-  --text-primary: #f7eee4;
-  --text-secondary: #b8aaa0;
-  --brand-text: #e5a77a;
-  --brand-border: rgb(229 167 122 / .42);
-  --state-hover: rgb(255 242 230 / .08);
-  --state-pressed: rgb(255 242 230 / .14);
-  --line: rgb(255 242 230 / .12);
-  --shadow-1: 0 26px 70px rgb(0 0 0 / .28);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root[data-theme="system"] {
-    color-scheme: dark;
-    --bg: #171312;
-    --surface-1: rgb(41 34 31 / .78);
-    --surface-2: rgb(53 44 40 / .82);
-    --surface-solid: #27211f;
-    --text-primary: #f7eee4;
-    --text-secondary: #b8aaa0;
-    --brand-text: #e5a77a;
-    --brand-border: rgb(229 167 122 / .42);
-    --state-hover: rgb(255 242 230 / .08);
-    --state-pressed: rgb(255 242 230 / .14);
-    --line: rgb(255 242 230 / .12);
-    --shadow-1: 0 26px 70px rgb(0 0 0 / .28);
-  }
 }

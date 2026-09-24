@@ -1,81 +1,40 @@
 @media (max-width: 900.98px) {
   :root { --sidebar: 0px; --player-height: 0px; }
-  .device-shell { padding: 0 0 calc(62px + env(safe-area-inset-bottom)); }
-  .sidebar { inset: auto 0 0; width: auto; height: calc(62px + env(safe-area-inset-bottom)); padding: 0 8px env(safe-area-inset-bottom); border-top: 1px solid var(--line); border-right: 0; }
-  .brand, .connection { display: none; }
-  .primary-nav { height: 62px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0; }
-  .primary-nav button { min-width: 0; min-height: 58px; display: flex; flex-direction: column; justify-content: center; gap: 3px; padding: 3px; border-radius: 10px; font-size: 10px; text-align: center; }
-  .primary-nav button::before { inset: auto 25% 0; width: 50%; height: 2px; border-radius: 2px 2px 0 0; }
-  .primary-nav button.active { background: transparent; color: var(--text-primary); }
-  .primary-nav svg { width: 21px; height: 21px; }
-  .primary-nav em { position: absolute; top: 5px; right: 16%; min-width: 17px; padding: 1px 4px; border-radius: 999px; background: var(--surface-2); font-size: 8px; text-align: center; }
-  .workspace { width: 100%; padding: 28px 18px 40px; }
-  .toast { bottom: calc(82px + env(safe-area-inset-bottom)); }
+  .device-shell { padding: 0; }
+  .device-shell .workspace { width: 100%; padding: 20px 14px 34px; }
+  .console-header { margin-bottom: 16px; }
+  .console-brand { display: flex; padding: 0; font-size: 18px; }
   .dashboard { grid-template-columns: 1fr; }
-  .source-player-tabs { display: none; }
-  .now-playing-card { position: relative; top: auto; min-height: 560px; }
   .modal { padding: 12px; }
   .dialog-card { max-height: calc(100dvh - 24px); padding: 20px 16px; border-radius: 20px; }
   .compact-dialog, .login-card { margin-top: 10dvh; }
-  .player-mode .device-shell { padding-bottom: 0; }
-  .player-mode .sidebar { display: none; }
-  .player-mode .workspace { height: 100dvh; padding: 0; }
-  .player-view.active { grid-template-rows: 44px minmax(0, 1fr); }
   .player-toolbar { height: 44px; padding: 2px 8px; }
-  .player-toolbar > div:first-child p, .player-toolbar > div:first-child strong, .player-toolbar .secondary-btn { display: none; }
-  .player-back { display: grid; }
 }
 
 @media (max-width: 700px) {
-  .workspace { padding: 24px 15px 30px; }
-  .page-header { align-items: flex-start; margin-bottom: 20px; }
-  .page-header h1 { font-size: 40px; }
-  .header-actions { flex-wrap: wrap; justify-content: flex-end; }
-  .header-actions .secondary-btn span { display: none; }
-  .header-actions .secondary-btn { width: 44px; padding: 0; }
-  .stop-all-btn { padding: 0 12px; }
+  .device-shell .workspace { padding: 16px 10px 26px; }
+  .page-header { align-items: center; margin-bottom: 14px; }
+  .header-actions { gap: 7px; }
   .dashboard { gap: 12px; }
-  .now-playing-card, .devices-panel { padding: 18px; border-radius: 22px; }
-  .now-playing-card { min-height: 520px; }
-  .sound-stage { width: min(230px, 68vw); margin-top: 12px; }
-  .source-volume { grid-template-columns: minmax(0, 1fr) 34px; }
-  .source-volume > span { grid-column: 1 / -1; }
+  .devices-panel { padding: 12px; border-radius: 22px; }
+  .system-health summary span { display: none; }
+  .system-health summary { width: 44px; padding: 0; justify-content: center; }
 }
 
 @media (max-width: 400px) {
-  .workspace { padding-inline: 12px; }
-  .primary-nav em { display: none; }
-  .page-header h1 { font-size: 36px; }
-  .now-playing-card, .devices-panel { padding: 14px; }
-  .stop-all-btn span { display: none; }
-  .stop-all-btn { width: 44px; padding: 0; }
+  .device-shell .workspace { padding-inline: 8px; }
   .console-header { gap: 8px; }
-  .console-header h1 { max-width: 180px; font-size: 31px; }
-  .header-actions { gap: 6px; }
-  .panel-heading h2 { font-size: 25px; }
-  .track-copy h3 { font-size: 27px; }
-  .device-card { padding: 12px; }
-  .device-card > header { grid-template-columns: 38px minmax(0, 1fr) auto; gap: 8px; }
-  .device-orb { width: 38px; height: 38px; }
+  .console-brand { font-size: 16px; }
+  .header-actions { gap: 5px; }
   .latency-control > footer { grid-template-columns: 38px 38px minmax(80px, 1fr) 38px; }
 }
 
 @media (pointer: coarse) {
   :root { --control: 44px; }
-  .latency-control button, .secondary-btn, .accent-btn, .stop-all-btn { min-height: 44px; }
+  .latency-control button, .secondary-btn, .accent-btn { min-height: 44px; }
   .latency-control > footer input { min-height: 44px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; }
-}
-
-/* The unified console no longer has a side or bottom navigation rail. */
-.device-shell { padding-left: 0; padding-bottom: 0; }
-@media (max-width: 900.98px) {
-  .device-shell { padding-bottom: 0; }
-  .device-shell .workspace { padding: 20px 14px 34px; }
-  .console-header { margin-bottom: 16px; }
-  .console-brand { display: flex; padding: 0; font-size: 18px; }
-  .dashboard { grid-template-columns: 1fr; }
 }

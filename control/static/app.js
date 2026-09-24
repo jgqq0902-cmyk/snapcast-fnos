@@ -1,14 +1,13 @@
 import { post, request } from "./js/api.js";
 import { state } from "./js/store.js";
 import { $, $$, closeDialog, openDialog, toast } from "./js/ui.js";
-import { renderZones } from "./js/zones.js?v=20260925-compact";
+import { renderZones } from "./js/zones.js?v=20260925-auditv3";
 import { activatePlayer, resetPlayer } from "./js/player.js?v=20260925-compact";
 
 let pollTimer;
 let bootstrapped = false;
 
 async function start() {
-  initTheme();
   initEvents();
   await checkAuth();
 }
@@ -82,10 +81,17 @@ async function refreshState() {
     state.sources = data.sources || data.snapcast?.streams || [];
     state.zones = data.zones || data.snapcast?.groups || [];
     state.mainGroup = data.mainGroup || data.snapcast?.mainGroup || null;
-    state.system = { ...state.system, ...(data.system || {}), healthy: !data.errors?.length };
+    state.system = { ...state.system, ...(data.system || {}) };
+    state.system.healthy = Boolean(state.system.ok) && !data.errors?.length;
     $("#dashboard").setAttribute("aria-busy", "false");
     $("#healthLamp").classList.toggle("ok", state.system.healthy);
-    $("#healthText").textContent = state.system.healthy ? "服务在线" : "部分异常";
+    $("#healthText").textContent = state.system.healthy ? "系统正常" : "部分服务异常";
+    const components = state.system.components || {};
+    for (const [name, id] of [["snapserver", "#healthSnapserver"], ["mpd", "#healthMpd"], ["mympd", "#healthMympd"]]) {
+      const node = $(id);
+      node.textContent = components[name] ? "正常" : "异常";
+      node.classList.toggle("ok", Boolean(components[name]));
+    }
     $("#gatewayName").textContent = state.system.hostname || "本机网关";
     renderZones(Boolean($("#dashboard .state-panel.is-error")));
   } catch (error) {
@@ -137,16 +143,7 @@ async function logout() {
 
 function startPolling() {
   clearInterval(pollTimer);
-  pollTimer = setInterval(refreshState, 2000);
-}
-
-function initTheme() {
-  document.documentElement.dataset.theme = "dark";
-  updateThemeColor();
-}
-
-function updateThemeColor() {
-  $("#themeColor").content = "#07100f";
+  pollTimer = setInterval(refreshState, 4000);
 }
 
 document.addEventListener("visibilitychange", () => {

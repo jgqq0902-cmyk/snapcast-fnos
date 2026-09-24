@@ -303,7 +303,7 @@ class ProductionConfigTest(unittest.TestCase):
     def test_mobile_breakpoint_has_unified_player_without_navigation_rail(self):
         styles = (Path(__file__).parent / "static" / "styles" / "responsive.css").read_text(encoding="utf-8")
         self.assertIn("@media (max-width: 900.98px)", styles)
-        self.assertIn(".device-shell { padding-left: 0; padding-bottom: 0; }", styles)
+        self.assertIn(".device-shell { padding: 0; }", styles)
         self.assertIn(".dashboard { grid-template-columns: 1fr; }", styles)
 
     def test_deployment_backup_covers_persistent_configuration(self):
@@ -380,8 +380,12 @@ class ProductionConfigTest(unittest.TestCase):
         app = (static / "app.js").read_text(encoding="utf-8")
         zones = (static / "js" / "zones.js").read_text(encoding="utf-8")
         tokens = (static / "styles" / "tokens.css").read_text(encoding="utf-8")
-        self.assertGreaterEqual(self.contrast_ratio("#87502f", "#fbf7f1"), 4.5)
-        self.assertIn('--brand-text: #87502f', tokens)
+        self.assertGreaterEqual(self.contrast_ratio("#e5a77a", "#171312"), 4.5)
+        self.assertIn('--brand-text: #e5a77a', tokens)
+        self.assertIn('data-theme="dark"', index)
+        self.assertNotIn('data-theme="system"', index)
+        self.assertIn('id="systemHealth"', index)
+        self.assertIn('id="healthSnapserver"', index)
         self.assertNotIn('aria-label="展开播放器"', index)
         self.assertNotIn('aria-label="折叠播放器"', index)
         self.assertIn('aria-label="退出登录"', index)

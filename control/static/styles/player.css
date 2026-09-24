@@ -172,7 +172,7 @@
 }
 
 /* One compact player instance embedded in the home screen. */
-.embedded-player { position: relative; inset: auto; z-index: 1; width: 100%; min-height: 720px; height: min(760px, calc(100vh - 150px)); overflow: hidden; border: 1px solid rgb(255 255 255 / .09); border-radius: 30px; box-shadow: 0 34px 90px rgb(0 0 0 / .32); }
+.embedded-player { --header-space: 130px; position: relative; inset: auto; z-index: 1; width: 100%; min-height: clamp(520px, calc(100dvh - var(--header-space)), 720px); height: min(760px, calc(100dvh - var(--header-space))); overflow: hidden; border: 1px solid rgb(255 255 255 / .09); border-radius: 30px; box-shadow: 0 34px 90px rgb(0 0 0 / .32); }
 .embedded-player .lightfield-toolbar { height: 58px; }
 .embedded-player .engine-state span { display: none; }
 .embedded-player .player-layout { overflow: hidden; display: flex; flex-direction: column; }
@@ -184,5 +184,14 @@
 .embedded-player[data-player-view="now"] .player-browser { display: none; }
 .embedded-player:not([data-player-view="now"]) .player-now { display: none; }
 @media (max-width: 900px) {
-  .embedded-player { inset: auto; height: min(720px, calc(100dvh - 120px)); min-height: 620px; }
+  .embedded-player { --header-space: 88px; inset: auto; min-height: clamp(500px, calc(100dvh - var(--header-space)), 680px); height: max(500px, calc(100dvh - var(--header-space))); }
+}
+
+@media (max-width: 400px) and (max-height: 650px) {
+  .embedded-player { min-height: 480px; height: calc(100dvh - 76px); }
+  .embedded-player .player-now { justify-content: flex-start; gap: 8px; padding-block: 10px; overflow-y: auto; }
+  .embedded-player .cover-orbit { width: min(20vh, 116px); flex: 0 0 auto; }
+  .embedded-player .player-track-copy h1 { font-size: 22px; }
+  .transport button { width: 42px; height: 42px; }
+  .transport .transport-main { width: 56px; height: 56px; }
 }
