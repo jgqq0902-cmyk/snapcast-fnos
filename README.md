@@ -109,6 +109,8 @@ node --check control/static/js/zones.js
 docker compose config -q
 ```
 
+GitHub Actions 会在每次 push 和 pull request 上运行全部 Python 单元测试、所有前端 ES Module 语法检查、Compose 校验和完整镜像构建。发布分支应在 GitHub 分支保护中将 `python-tests`、`js-syntax`、`docker-build` 设为必需检查。
+
 容器内检查：
 
 ```sh
