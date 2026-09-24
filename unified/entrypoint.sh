@@ -14,6 +14,7 @@ sed -i -E "s#^(snapcast:x:)[0-9]+:#\\1${pgid}:#" /etc/group
 dbus-uuidgen --ensure 2>/dev/null || true
 mkdir -p /app/data/dlna/music /app/data/dlna/playlists /app/data/dlna/cache \
          /app/data/mympd/work /app/data/mympd/cache \
+         /app/data/service-logs \
          /app/data/nginx/client_body /app/data/nginx/proxy /app/data/nginx/fastcgi \
          /app/data/nginx/uwsgi /app/data/nginx/scgi /app/data/nginx/logs
 schema_version=${DATA_SCHEMA_VERSION:-1}
@@ -50,6 +51,7 @@ if [ ! -f "$ownership_marker" ]; then
     chown snapcast:snapcast "$ownership_marker"
 fi
 chown snapcast:snapcast "$schema_marker"
+chown -R snapcast:snapcast /app/data/service-logs
 chown -R snapcast:snapcast /app/data/nginx
 
 web_port=${WEB_PORT:-1781}

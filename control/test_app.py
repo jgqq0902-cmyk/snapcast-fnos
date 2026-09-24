@@ -330,6 +330,8 @@ class ProductionConfigTest(unittest.TestCase):
         self.assertIn("exec /usr/bin/supervisord", entrypoint)
         supervisor = (project / "unified" / "supervisord.conf").read_text(encoding="utf-8")
         self.assertNotIn("user=root", supervisor)
+        self.assertNotIn("/dev/stdout", supervisor)
+        self.assertIn("/app/data/service-logs/%(program_name)s.stdout.log", supervisor)
 
     def test_dual_panel_ui_and_mympd_skin_contract(self):
         project = Path(__file__).parents[1]
