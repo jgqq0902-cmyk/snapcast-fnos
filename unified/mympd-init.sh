@@ -38,7 +38,7 @@ write_config http_port "$http_port"
 write_config ssl false
 write_config acl +127.0.0.1
 # MPD fetches native webradio playlists back from this URI. It must stay on
-# loopback: the public /player/ route is intentionally protected by nginx
+# loopback: browsers only receive the allowlisted Control player API
 # session authentication and would return 401 to MPD's unauthenticated curl.
 write_config mympd_uri "http://127.0.0.1:$http_port"
 write_state mpd_host 127.0.0.1

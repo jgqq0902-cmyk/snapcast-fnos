@@ -23,14 +23,14 @@
 | Snapclient 音频 | `<网关地址>:1704` | LAN |
 | AirPlay | `<网关地址>:5000` 及动态端口 | LAN/mDNS |
 | DLNA | `<网关地址>` | LAN/SSDP |
-| myMPD 内部服务 | `127.0.0.1:1782` | 仅容器内部，由 `/player/` 代理 |
+| myMPD 内部服务 | `127.0.0.1:1782` | 仅容器 loopback，不直接代理完整管理界面 |
 | Snapserver HTTP/JSON-RPC | `127.0.0.1:1780` | 仅容器内部 |
 | Snapserver TCP control | `127.0.0.1:1705` | 仅容器内部 |
 | DLNA HTTP 续传与 MPD 代理 | `127.0.0.1:1790/6601` | 仅容器内部 |
 
 1780 和 1705 不再对 LAN 开放，避免绕过 Web 控制台鉴权。旧 Snapweb 因此不再作为外部入口；统一入口是 1781。仅在完全可信且隔离的家庭 LAN 中，才可将 `CONTROL_AUTH_ENABLED=false`。
 
-myMPD 的 `mympd_uri` 固定使用容器内 `http://127.0.0.1:1782`（末尾不带 `/`），供 MPD 回取原生网络电台播放列表；浏览器仍只能通过带控制台鉴权的 `/player/` 入口访问。
+myMPD 的 `mympd_uri` 固定使用容器内 `http://127.0.0.1:1782`（末尾不带 `/`），供 MPD 回取原生网络电台播放列表；浏览器只能通过控制服务的白名单 RPC、封面代理和 SSE 更新流访问播放器所需能力。
 myMPD 自身通过容器内 TCP `127.0.0.1:6600` 连接 MPD，以便正确解析 `mympd://webradio/...`；MPD 的 Unix Socket 继续供其他内部组件使用。
 
 登录在 nginx 按真实客户端地址限流，Control 只在 TCP 对端为 loopback 时信任 `X-Real-IP`。默认使用 HTTP，适合隔离的家庭 LAN；如网络包含访客或不可信设备，可将证书放入 `CERTS_DIR` 并设置：
@@ -72,7 +72,7 @@ docker compose up -d --wait --wait-timeout 180
 docker exec snapcast /app/unified/smoke-test.sh
 ```
 
-冒烟测试包含未认证拦截、登录、myMPD 静态资源、WebSocket Upgrade 和退出后会话失效的完整生产代理链验证。
+冒烟测试包含未认证拦截、登录、允许列表 RPC、拒绝非允许方法、SSE 更新流和退出后会话失效的完整生产代理链验证。
 
 `MEDIA_ROOT` 会只读挂载为容器内 `/media`。控制台和播放器不会修改音乐文件。持久化目录 `config/`、`data/`、`certs/`、`.env` 均已从 Git 排除。
 
@@ -90,7 +90,7 @@ sh unified/deploy-console.sh
 2. 从 `.env.example` 创建 `.env`，设置网络、`PUID/PGID` 和控制台密码。
 3. 将仓库的 `snapserver.conf` 复制到 `config/snapserver.conf`；仅改 Compose 不会更新已挂载的运行时配置。
 4. 重建单容器。Snapclient 应连接 `.env` 中的 `GATEWAY_IP:1704`。
-5. 登录统一入口的设备页检查音源、音量和延迟，再打开同站点 `/player/` 检查曲库、封面、歌词、队列和歌单。
+5. 登录统一入口，在左侧播放器依次检查曲库、封面、队列、歌单和电台，再检查右侧设备音量与延迟。
 
 认证会话保存在内存中，容器重启或会话到期后需要重新登录。登录失败具有按来源地址的短时限速。
 
@@ -152,18 +152,18 @@ docker compose up -d --remove-orphans --wait --wait-timeout 180
 
 1781 的 Snap / Room 控制台采用原生 ES Modules。首页左侧直接承载完整的五标签 myMPD 播放器，右侧显示精简设备控制，移动端自动改为单列：
 
-- `control/static/js/`：设备状态、播放进度、myMPD JSON-RPC/WebSocket 适配器与播放器 UI
+- `control/static/js/`：设备状态、播放进度、受限 myMPD JSON-RPC/SSE 适配器与播放器 UI
 - `control/static/styles/`：令牌、基础、双栏设备页、流体光域播放器与响应式样式
 - `control/static/icons.svg`、`control/static/art/`：原创本地图标 Sprite 与空状态美术；说明见 `icons/NOTICE.md`
 
 控制服务会把所有 Snapclient 幂等收敛到唯一“主播放组”，并由 API 显式返回 `mainGroup`。Snapcast Group 仅作为底层传输拓扑，不用于表达房间或场景；设备是否参与播放通过静音映射实现，并保留原音量和延迟。控制页不暴露底层 AirPlay、DLNA、Default 流选择，`Default` 会自动让 AirPlay 优先于 MPD/DLNA。音源音量直接控制 MPD 软件混音器，AirPlay 音量由发送端控制。MPD/DLNA 显示平滑进度，时长已知的本地或远程音频支持跳转；AirPlay 和直播流不会显示虚假可拖动进度。
 
-首页与全屏模式复用同一个原生 ES Modules 播放器实例，通过同源 `/player/api/default` 与 `/player/ws/default` 使用 myMPD 的 JSON-RPC 和通知协议。五个标签依次为播放、队列、歌单、电台、曲库并默认打开播放；展开按钮将同一实例切换为全屏，折叠后保留当前标签与播放状态。曲库搜索结果支持多选或全选后加入已有/新建歌单；歌单支持重命名、删除、移除及调整曲目顺序；队列可由 myMPD 从曲库随机生成 50 首。所有数据与操作均由 myMPD 提供，前端不建立第二套曲库或歌单存储。原版 myMPD 仍保留在受同一认证保护的 `/player/`，仅作为维护和升级验证入口。
+首页使用一个原生 ES Modules 播放器实例，通过同源 `/api/player/rpc`、`/api/player/art` 与 `/api/player/events` 使用 myMPD 的允许列表能力。五个标签依次为播放、队列、歌单、电台、曲库并默认打开播放。曲库搜索结果支持多选或全选后加入已有/新建歌单；歌单支持重命名、删除、移除及调整曲目顺序；队列可由 myMPD 从曲库随机生成 50 首。所有数据与操作均由 myMPD 提供，前端不建立第二套曲库或歌单存储。完整 myMPD 管理界面不再代理到 LAN，仅能在容器 loopback 内排障。
 
 设备页的“立即停止”会停止 MPD（保留队列）并断开当前 AirPlay 会话，不会修改任何设备的音量、静音、延迟或播放组。AirPlay 优先使用 Shairport Sync 的 D-Bus `DropSession`；接口不可用时由固定的无参数辅助脚本终止接收进程，Supervisor 随即恢复接收服务。
 
 upmpdcli 只连接回环 MPD 命令代理 `127.0.0.1:6601`。代理仅改写 DLNA 提交的 HTTP/HTTPS 播放地址，本地曲库和 myMPD 仍直接连接 MPD `6600`。对应的 HTTP 续传服务只监听 `127.0.0.1:1790`，不会成为 LAN 通用代理；上游连接提前结束时按当前字节位置重试，默认最多连续重试 10 次并采用退避等待。带签名 URL 已失效、源站不允许续传或控制端主动停止时不会伪造成功。
 
-控制台采用固定深色“流体光域”主题，并以 WCAG 2.2 AA 为验收基线；登录弹窗不可通过 ESC 或背景点击关闭。退出登录或会话过期会立即清空设备、音源及播放器状态并断开 myMPD WebSocket。右上角轻量健康状态显示 Snapserver、MPD 和 myMPD 的独立结果；设备页对连接中、空设备、网关离线、部分设备离线和会话失效分别提供明确状态与恢复入口。
+控制台采用固定深色“流体光域”主题，并以 WCAG 2.2 AA 为验收基线；登录弹窗不可通过 ESC 或背景点击关闭。退出登录或会话过期会立即清空设备、音源及播放器状态并断开播放器 SSE。右上角轻量健康状态显示 Snapserver、MPD 和 myMPD 的独立结果；设备页对连接中、空设备、网关离线、部分设备离线和会话失效分别提供明确状态与恢复入口。
 
 前端发布前应在固定深色主题下检查 `1440×900`、`1280×720`、`1024×768`、`900×1200`、`768×1024`、`430×932`、`390×844`、`375×812` 与 `320×568`；至少覆盖空设备、在线、部分离线、长名称、登录和会话过期状态。`control.test_app.ProductionConfigTest` 固化对比度、ARIA、认证清理、状态文案和移动端布局契约，避免常见视觉回归。

@@ -14,6 +14,9 @@ import socket
 import subprocess
 import threading
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
 from collections import defaultdict, deque
 from http import HTTPStatus
 from http.cookies import SimpleCookie
@@ -28,6 +31,7 @@ SNAPSERVER_RPC_URL = os.environ.get("SNAPSERVER_RPC_URL", "http://127.0.0.1:1780
 SNAPSERVER_RPC_PORT = int(os.environ.get("SNAPSERVER_RPC_PORT", "1705"))
 MPD_SOCKET = os.environ.get("MPD_SOCKET", "/app/data/dlna/mpd.sock")
 MYMPD_INTERNAL_PORT = int(os.environ.get("MYMPD_INTERNAL_PORT", "1782"))
+MYMPD_RPC_URL = f"http://127.0.0.1:{MYMPD_INTERNAL_PORT}/api/default"
 AIRPLAY_STOP_HELPER = os.environ.get("AIRPLAY_STOP_HELPER", "/app/unified/drop-airplay-session.sh")
 STATIC_DIR = Path(__file__).with_name("static")
 
@@ -53,6 +57,18 @@ LOGIN_ATTEMPTS: dict[str, deque[float]] = defaultdict(deque)
 HEALTH_LOCK = threading.Lock()
 HEALTH_STATE: dict[str, Any] = {"ok": False, "updatedAt": 0, "components": {}}
 MAIN_GROUP_NAME = os.environ.get("SNAPCAST_MAIN_GROUP_NAME", "主播放组").strip() or "主播放组"
+MYMPD_ALLOWED_METHODS = frozenset({
+    "MYMPD_API_PLAYER_STATE", "MYMPD_API_PLAYER_CURRENT_SONG", "MYMPD_API_PLAYER_PLAY",
+    "MYMPD_API_PLAYER_PAUSE", "MYMPD_API_PLAYER_STOP", "MYMPD_API_PLAYER_NEXT",
+    "MYMPD_API_PLAYER_PREV", "MYMPD_API_PLAYER_SEEK_CURRENT", "MYMPD_API_PLAYER_VOLUME_SET",
+    "MYMPD_API_PLAYER_PLAY_SONG", "MYMPD_API_DATABASE_ALBUM_LIST", "MYMPD_API_DATABASE_SEARCH",
+    "MYMPD_API_DATABASE_ALBUM_DETAIL", "MYMPD_API_QUEUE_SEARCH", "MYMPD_API_QUEUE_REPLACE_URIS",
+    "MYMPD_API_QUEUE_APPEND_URIS", "MYMPD_API_QUEUE_REPLACE_PLAYLISTS", "MYMPD_API_QUEUE_RM_IDS",
+    "MYMPD_API_QUEUE_CLEAR", "MYMPD_API_QUEUE_ADD_RANDOM", "MYMPD_API_PLAYLIST_LIST",
+    "MYMPD_API_PLAYLIST_CONTENT_LIST", "MYMPD_API_PLAYLIST_CONTENT_APPEND_URIS",
+    "MYMPD_API_PLAYLIST_RENAME", "MYMPD_API_PLAYLIST_RM", "MYMPD_API_PLAYLIST_CONTENT_RM_POSITIONS",
+    "MYMPD_API_PLAYLIST_CONTENT_MOVE_POSITION", "MYMPD_API_WEBRADIO_FAVORITE_SEARCH",
+})
 
 
 class ControlError(RuntimeError):
@@ -479,6 +495,46 @@ def health_snapshot() -> dict[str, Any]:
         return dict(HEALTH_STATE)
 
 
+def proxy_mympd_rpc(payload: dict[str, Any]) -> dict[str, Any]:
+    method = payload.get("method")
+    if method not in MYMPD_ALLOWED_METHODS:
+        raise ControlError("播放器方法不在允许列表中")
+    params = payload.get("params", {})
+    if not isinstance(params, (dict, list)):
+        raise ControlError("播放器参数格式无效")
+    request_body = json.dumps({"jsonrpc": "2.0", "id": payload.get("id", 1), "method": method, "params": params}, separators=(",", ":")).encode()
+    request = urllib.request.Request(MYMPD_RPC_URL, data=request_body, headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(request, timeout=8) as response:
+            raw = response.read(2 * 1024 * 1024 + 1)
+    except (OSError, urllib.error.URLError) as exc:
+        raise ControlError("播放器服务暂不可用") from exc
+    if len(raw) > 2 * 1024 * 1024:
+        raise ControlError("播放器响应过大")
+    try:
+        return json.loads(raw)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ControlError("播放器返回了无效响应") from exc
+
+
+def mympd_art_url(query: str) -> str:
+    values = urllib.parse.parse_qs(query, keep_blank_values=False)
+    source = values.get("source", [""])[0]
+    if source:
+        parsed = urllib.parse.urlsplit(source)
+        if parsed.path not in {"/albumart", "/albumart-large"}:
+            raise ControlError("封面路径不受支持")
+        uri = urllib.parse.parse_qs(parsed.query).get("uri", [""])[0]
+        size = "large" if parsed.path.endswith("-large") else "small"
+    else:
+        uri = values.get("uri", [""])[0]
+        size = values.get("size", ["small"])[0]
+    if not uri or len(uri) > 4096 or size not in {"small", "large"}:
+        raise ControlError("封面参数无效")
+    path = "/albumart-large" if size == "large" else "/albumart"
+    return f"http://127.0.0.1:{MYMPD_INTERNAL_PORT}{path}?offset=0&uri={urllib.parse.quote(uri, safe='')}"
+
+
 def health_monitor() -> None:
     while True:
         refresh_health()
@@ -552,7 +608,8 @@ class Handler(BaseHTTPRequestHandler):
         return False
 
     def do_GET(self) -> None:  # noqa: N802
-        path = urlparse(self.path).path
+        parsed_path = urlparse(self.path)
+        path = parsed_path.path
         if not self.require_auth(path):
             return
         if path == "/api/auth":
@@ -561,8 +618,36 @@ class Handler(BaseHTTPRequestHandler):
             self.json_response(combined_state()); return
         if path == "/api/health":
             self.json_response(health_snapshot()); return
-        if path == "/api/session-check":
-            self._headers(HTTPStatus.NO_CONTENT, "text/plain", 0); return
+        if path == "/api/player/events":
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Connection", "keep-alive")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.end_headers()
+            try:
+                for sequence in range(60):
+                    self.wfile.write(f"event: update\ndata: {{\"sequence\":{sequence}}}\n\n".encode())
+                    self.wfile.flush()
+                    time.sleep(2)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            return
+        if path == "/api/player/art":
+            try:
+                request = urllib.request.Request(mympd_art_url(parsed_path.query), headers={"Accept": "image/*"})
+                with urllib.request.urlopen(request, timeout=8) as response:
+                    body = response.read(12 * 1024 * 1024 + 1)
+                    content_type = response.headers.get_content_type()
+                if len(body) > 12 * 1024 * 1024 or not content_type.startswith("image/"):
+                    raise ControlError("封面响应无效")
+                self._headers(HTTPStatus.OK, content_type, len(body), cache="private, max-age=300")
+                self.wfile.write(body)
+            except ControlError as exc:
+                self.json_response({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            except (OSError, urllib.error.URLError):
+                self.send_error(HTTPStatus.BAD_GATEWAY)
+            return
         route = "/index.html" if path in ("/", "/index.html") else path
         requested = (STATIC_DIR / route.lstrip("/")).resolve()
         if STATIC_DIR.resolve() not in requested.parents or not requested.is_file():
@@ -606,6 +691,8 @@ class Handler(BaseHTTPRequestHandler):
             self.json_response({"ok": True}, headers={"Set-Cookie": f"{SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0{secure}"}); return
         try:
             body = self.read_json()
+            if path == "/api/player/rpc":
+                self.json_response(proxy_mympd_rpc(body)); return
             if path == "/api/snapcast/volume":
                 result = snap_rpc("Client.SetVolume", {"id": str(body.get("clientId", "")), "volume": {"muted": bool(body.get("muted", False)), "percent": clamp_int(body.get("percent"), 0, 100, "音量")}})
             elif path == "/api/snapcast/latency":

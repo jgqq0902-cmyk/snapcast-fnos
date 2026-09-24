@@ -14,7 +14,7 @@ import app as app_module
 from app import (
     ControlError, Handler, clamp_int,
     login_allowed, normalized_snapcast_state, parse_mpd,
-    player_state, reconcile_main_group, seek_player, set_player_volume,
+    mympd_art_url, player_state, proxy_mympd_rpc, reconcile_main_group, seek_player, set_player_volume,
     record_login_failure, set_client_name,
     set_client_active, set_zone_volume, song_payload, source_descriptor, stop_all_sources,
 )
@@ -64,6 +64,15 @@ class ControlHelpersTest(unittest.TestCase):
             result = set_player_volume(42)
         self.assertEqual(mpd.call_args_list[0].args, ("setvol 42",))
         self.assertEqual(result["volume"], 42)
+
+    def test_mympd_rpc_rejects_methods_outside_allowlist(self):
+        with self.assertRaisesRegex(ControlError, "允许列表"):
+            proxy_mympd_rpc({"method": "MYMPD_API_SCRIPT_EXECUTE", "params": {}})
+
+    def test_mympd_art_proxy_only_accepts_albumart_paths(self):
+        self.assertIn("/albumart-large?", mympd_art_url("size=large&uri=music%2Fsong.flac"))
+        with self.assertRaisesRegex(ControlError, "不受支持"):
+            mympd_art_url("source=%2Fapi%2Fdefault%3Furi%3Dx")
 
     def test_login_rate_limit_is_per_address(self):
         app_module.LOGIN_ATTEMPTS.clear()
@@ -235,12 +244,13 @@ class ProductionConfigTest(unittest.TestCase):
         light, dark = sorted((luminance(foreground), luminance(background)), reverse=True)
         return (light + 0.05) / (dark + 0.05)
 
-    def test_nginx_protects_player_websocket_and_limits_login_by_remote_ip(self):
+    def test_nginx_exposes_no_full_mympd_proxy_and_limits_login_by_remote_ip(self):
         config = (Path(__file__).parents[1] / "unified" / "nginx.conf").read_text(encoding="utf-8")
         self.assertIn("limit_req_zone $binary_remote_addr", config)
         self.assertIn("location = /api/login", config)
-        self.assertIn("auth_request /_session_check", config)
-        self.assertIn("proxy_set_header Upgrade $http_upgrade", config)
+        self.assertNotIn("location /player/", config)
+        self.assertNotIn("__MYMPD_PORT__", config)
+        self.assertNotIn("proxy_set_header Upgrade", config)
 
     def test_bundled_radio_playlist_is_well_formed_and_deduplicated(self):
         playlist = Path(__file__).parents[1] / "unified" / "radio-stations.m3u"
@@ -354,8 +364,9 @@ class ProductionConfigTest(unittest.TestCase):
         self.assertNotIn('data-player-view="lyrics"', index)
         self.assertIn('repeat(5, minmax(0, 1fr))', styles)
         self.assertIn('class="lightfield-player embedded-player active"', index)
-        self.assertIn('const API_URL = "/player/api/default"', adapter)
-        self.assertIn('const WS_PATH = "/player/ws/default"', adapter)
+        self.assertIn('const API_URL = "/api/player/rpc"', adapter)
+        self.assertIn('const EVENTS_URL = "/api/player/events"', adapter)
+        self.assertIn("new EventSource", adapter)
         self.assertIn("MYMPD_API_WEBRADIO_FAVORITE_SEARCH", adapter)
         self.assertIn("radioNames.get(normalizeUri(uri))", adapter)
         self.assertIn("rememberRadioNames", adapter)

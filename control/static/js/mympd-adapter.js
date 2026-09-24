@@ -1,5 +1,5 @@
-const API_URL = "/player/api/default";
-const WS_PATH = "/player/ws/default";
+const API_URL = "/api/player/rpc";
+const EVENTS_URL = "/api/player/events";
 const fields = ["Title", "Artist", "Album", "AlbumArtist", "Duration", "Track", "Name", "Pos"];
 let requestId = 1000;
 const radioNames = new Map();
@@ -21,20 +21,12 @@ export async function call(method, params = {}) {
 }
 
 export function connectNotifications(onUpdate, onState) {
-  let socket, retry, closed = false, delay = 1000;
-  const open = () => {
-    if (closed) return;
-    const scheme = location.protocol === "https:" ? "wss:" : "ws:";
-    socket = new WebSocket(`${scheme}//${location.host}${WS_PATH}`);
-    socket.onopen = () => { delay = 1000; onState?.(true); };
-    socket.onmessage = event => {
-      try { onUpdate?.(JSON.parse(event.data)); } catch { onUpdate?.({}); }
-    };
-    socket.onclose = () => { onState?.(false); retry = setTimeout(open, delay); delay = Math.min(delay * 1.8, 15000); };
-    socket.onerror = () => socket.close();
-  };
-  open();
-  return () => { closed = true; clearTimeout(retry); socket?.close(); };
+  const events = new EventSource(EVENTS_URL, { withCredentials: true });
+  const receive = event => { try { onUpdate?.(JSON.parse(event.data)); } catch { onUpdate?.({}); } };
+  events.onopen = () => onState?.(true);
+  events.addEventListener("update", receive);
+  events.onerror = () => onState?.(false);
+  return () => events.close();
 }
 
 export async function getPlayer() {
@@ -57,7 +49,7 @@ export function normalizePlayer(status = {}, song = {}) {
     duration: Number(status.totalTime ?? song.Duration ?? song.duration ?? 0), currentSongId: Number(status.currentSongId ?? song.id ?? -1),
     random: Boolean(status.random), repeat: Boolean(status.repeat),
     song: { uri, title: radioNames.get(normalizeUri(uri)) || readableTitle(song, uri), artist: song.Artist || song.AlbumArtist || "", album: song.Album || "" },
-    cover: uri ? `/player/albumart-large?offset=0&uri=${encodeURIComponent(uri)}` : "/art/album-placeholder.svg",
+    cover: uri ? `/api/player/art?size=large&uri=${encodeURIComponent(uri)}` : "/art/album-placeholder.svg",
   };
 }
 
@@ -122,9 +114,9 @@ export function radioPlaylistUri(uri) { return `mympd://webradio/${encodeURI(uri
 export function coverFor(item, radio = false) {
   if (radio) return item.Image ? rewriteAsset(item.Image) : "/art/radio-placeholder.svg";
   const uri = item.FirstSongUri || item.uri || item.Uri || "";
-  return uri ? `/player/albumart?offset=0&uri=${encodeURIComponent(uri)}` : "/art/album-placeholder.svg";
+  return uri ? `/api/player/art?size=small&uri=${encodeURIComponent(uri)}` : "/art/album-placeholder.svg";
 }
-export function rewriteAsset(uri) { return uri?.startsWith("/") ? `/player${uri}` : uri; }
+export function rewriteAsset(uri) { return uri?.startsWith("/albumart") ? `/api/player/art?source=${encodeURIComponent(uri)}` : "/art/radio-placeholder.svg"; }
 function escapeMpd(value) { return String(value).replaceAll("\\", "\\\\").replaceAll("'", "\\'"); }
 function fileName(uri) { return decodeURIComponent(String(uri).split("/").pop() || "").replace(/\.[^.]+$/, ""); }
 function isWebUri(value) { return /^https?:\/\//i.test(String(value || "")); }
