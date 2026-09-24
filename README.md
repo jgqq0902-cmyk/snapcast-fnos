@@ -152,7 +152,7 @@ docker compose up -d --remove-orphans --wait --wait-timeout 180
 - `control/static/styles/`：令牌、基础、双栏设备页、流体光域播放器与响应式样式
 - `control/static/icons.svg`、`control/static/art/`：原创本地图标 Sprite 与空状态美术；说明见 `icons/NOTICE.md`
 
-控制服务会把 Snapclient 收敛到单一“主播放组”；停用设备通过静音实现并保留原音量。控制页不暴露底层 AirPlay、DLNA、Default 流选择，`Default` 会自动让 AirPlay 优先于 MPD/DLNA。音源音量直接控制 MPD 软件混音器，AirPlay 音量由发送端控制。MPD/DLNA 显示平滑进度，时长已知的本地或远程音频支持跳转；AirPlay 和直播流不会显示虚假可拖动进度。
+控制服务会把所有 Snapclient 幂等收敛到唯一“主播放组”，并由 API 显式返回 `mainGroup`。Snapcast Group 仅作为底层传输拓扑，不用于表达房间或场景；设备是否参与播放通过静音映射实现，并保留原音量和延迟。控制页不暴露底层 AirPlay、DLNA、Default 流选择，`Default` 会自动让 AirPlay 优先于 MPD/DLNA。音源音量直接控制 MPD 软件混音器，AirPlay 音量由发送端控制。MPD/DLNA 显示平滑进度，时长已知的本地或远程音频支持跳转；AirPlay 和直播流不会显示虚假可拖动进度。
 
 首页与全屏模式复用同一个原生 ES Modules 播放器实例，通过同源 `/player/api/default` 与 `/player/ws/default` 使用 myMPD 的 JSON-RPC 和通知协议。五个标签依次为播放、队列、歌单、电台、曲库并默认打开播放；展开按钮将同一实例切换为全屏，折叠后保留当前标签与播放状态。曲库搜索结果支持多选或全选后加入已有/新建歌单；歌单支持重命名、删除、移除及调整曲目顺序；队列可由 myMPD 从曲库随机生成 50 首。所有数据与操作均由 myMPD 提供，前端不建立第二套曲库或歌单存储。原版 myMPD 仍保留在受同一认证保护的 `/player/`，仅作为维护和升级验证入口。
 

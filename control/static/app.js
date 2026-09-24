@@ -43,6 +43,7 @@ function openLogin() {
 
 function clearPrivateState(message = "登录状态已失效，请重新登录。") {
   state.zones = [];
+  state.mainGroup = null;
   state.sources = [];
   state.player = { state: "stop", song: {}, capabilities: {} };
   renderZones(true);
@@ -80,6 +81,7 @@ async function refreshState() {
     state.playerSyncedAt = performance.now();
     state.sources = data.sources || data.snapcast?.streams || [];
     state.zones = data.zones || data.snapcast?.groups || [];
+    state.mainGroup = data.mainGroup || data.snapcast?.mainGroup || null;
     state.system = { ...state.system, ...(data.system || {}), healthy: !data.errors?.length };
     $("#dashboard").setAttribute("aria-busy", "false");
     $("#healthLamp").classList.toggle("ok", state.system.healthy);

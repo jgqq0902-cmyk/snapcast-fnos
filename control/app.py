@@ -59,13 +59,6 @@ class ControlError(RuntimeError):
     pass
 
 
-class GroupMutationError(ControlError):
-    def __init__(self, message: str, state: dict[str, Any], rollback_errors: list[str]):
-        super().__init__(message)
-        self.state = state
-        self.rollback_errors = rollback_errors
-
-
 def auth_configured() -> bool:
     return not AUTH_ENABLED or bool(CONTROL_USERNAME and CONTROL_PASSWORD)
 
@@ -310,6 +303,7 @@ def normalized_snapcast_state() -> dict[str, Any]:
                 "volume": int(volume.get("percent", 0)),
                 "muted": bool(volume.get("muted", False)),
                 "active": not bool(volume.get("muted", False)),
+                "participating": not bool(volume.get("muted", False)),
                 "ip": client.get("host", {}).get("ip", "").replace("::ffff:", ""),
                 "version": client.get("snapclient", {}).get("version", ""),
             })
@@ -327,7 +321,7 @@ def normalized_snapcast_state() -> dict[str, Any]:
             "connectedCount": len(connected), "clients": clients,
         })
     main_group = max(groups, key=lambda item: len(item["clients"]), default=None)
-    return {"streams": streams, "groups": groups, "mainGroupId": main_group["id"] if main_group else ""}
+    return {"streams": streams, "groups": groups, "mainGroupId": main_group["id"] if main_group else "", "mainGroup": main_group}
 
 
 def set_zone_volume(group_id: Any, percent: Any, muted: bool = False) -> list[Any]:
@@ -389,35 +383,10 @@ def snap_name(value: Any, label: str) -> str:
     return name
 
 
-def requested_client_ids(value: Any) -> list[str]:
-    if not isinstance(value, list) or not value or len(value) > 128:
-        raise ControlError("设备列表必须包含 1 到 128 台设备")
-    client_ids = [str(item).strip() for item in value]
-    if any(not item for item in client_ids) or len(set(client_ids)) != len(client_ids):
-        raise ControlError("设备列表包含空值或重复设备")
-    return client_ids
-
-
 def snapcast_indexes(state: dict[str, Any]) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]]]:
     groups = {group["id"]: group for group in state["groups"]}
     clients = {client["id"]: client for group in state["groups"] for client in group["clients"]}
     return groups, clients
-
-
-def validate_clients(client_ids: list[str], clients: dict[str, dict[str, Any]]) -> None:
-    missing = [client_id for client_id in client_ids if client_id not in clients]
-    if missing:
-        raise ControlError(f"未知设备：{', '.join(missing[:3])}")
-
-
-def set_group_name(group_id: Any, name: Any) -> dict[str, Any]:
-    with GROUP_MUTATION_LOCK:
-        groups, _ = snapcast_indexes(normalized_snapcast_state())
-        identifier = str(group_id or "")
-        if identifier not in groups:
-            raise ControlError("播放组不存在")
-        snap_rpc("Group.SetName", {"id": identifier, "name": snap_name(name, "组名")})
-        return normalized_snapcast_state()
 
 
 def set_client_name(client_id: Any, name: Any) -> dict[str, Any]:
@@ -427,95 +396,6 @@ def set_client_name(client_id: Any, name: Any) -> dict[str, Any]:
         if identifier not in clients:
             raise ControlError("设备不存在")
         snap_rpc("Client.SetName", {"id": identifier, "name": snap_name(name, "设备名")})
-        return normalized_snapcast_state()
-
-
-def set_group_members(group_id: Any, client_ids_value: Any) -> dict[str, Any]:
-    with GROUP_MUTATION_LOCK:
-        state = normalized_snapcast_state()
-        groups, clients = snapcast_indexes(state)
-        identifier = str(group_id or "")
-        if identifier not in groups:
-            raise ControlError("播放组不存在")
-        client_ids = requested_client_ids(client_ids_value)
-        validate_clients(client_ids, clients)
-        snap_rpc("Group.SetClients", {"id": identifier, "clients": client_ids})
-        return normalized_snapcast_state()
-
-
-def rollback_groups(snapshot: dict[str, Any]) -> list[str]:
-    errors: list[str] = []
-    for original in snapshot["groups"]:
-        original_ids = [client["id"] for client in original["clients"]]
-        if not original_ids:
-            continue
-        try:
-            current = normalized_snapcast_state()
-            target = next((group for group in current["groups"] if any(client["id"] == original_ids[0] for client in group["clients"])), None)
-            if target is None:
-                errors.append(f"无法定位原组 {original['name']}")
-                continue
-            snap_rpc("Group.SetClients", {"id": target["id"], "clients": original_ids})
-            snap_rpc("Group.SetName", {"id": target["id"], "name": original["name"]})
-            if original.get("streamId"):
-                snap_rpc("Group.SetStream", {"id": target["id"], "stream_id": original["streamId"]})
-        except ControlError as exc:
-            errors.append(f"{original['name']}：{exc}")
-    return errors
-
-
-def create_group(name: Any, client_ids_value: Any, stream_id_value: Any = "") -> dict[str, Any]:
-    group_name = snap_name(name, "组名")
-    client_ids = requested_client_ids(client_ids_value)
-    stream_id = str(stream_id_value or "").strip()
-    with GROUP_MUTATION_LOCK:
-        snapshot = normalized_snapcast_state()
-        groups, clients = snapcast_indexes(snapshot)
-        validate_clients(client_ids, clients)
-        if stream_id and stream_id not in {stream["id"] for stream in snapshot["streams"]}:
-            raise ControlError("音源不存在")
-        try:
-            selected = set(client_ids)
-            target = next((group for group in groups.values() if {client["id"] for client in group["clients"]} == selected), None)
-            if target is None:
-                anchor = client_ids[0]
-                origin = next(group for group in groups.values() if any(client["id"] == anchor for client in group["clients"]))
-                origin_ids = [client["id"] for client in origin["clients"]]
-                if len(origin_ids) > 1:
-                    snap_rpc("Group.SetClients", {"id": origin["id"], "clients": [item for item in origin_ids if item != anchor]})
-                    current = normalized_snapcast_state()
-                    target = next((group for group in current["groups"] if any(client["id"] == anchor for client in group["clients"])), None)
-                else:
-                    target = origin
-                if target is None:
-                    raise ControlError("Snapserver 未能建立新播放组")
-                snap_rpc("Group.SetClients", {"id": target["id"], "clients": client_ids})
-            snap_rpc("Group.SetName", {"id": target["id"], "name": group_name})
-            if stream_id:
-                snap_rpc("Group.SetStream", {"id": target["id"], "stream_id": stream_id})
-            return normalized_snapcast_state()
-        except ControlError as exc:
-            rollback_errors = rollback_groups(snapshot)
-            try:
-                state = normalized_snapcast_state()
-            except ControlError:
-                state = {"groups": [], "streams": []}
-            raise GroupMutationError(f"创建播放组失败：{exc}", state, rollback_errors) from exc
-
-
-def merge_groups(source_group_id: Any, target_group_id: Any) -> dict[str, Any]:
-    source_id, target_id = str(source_group_id or ""), str(target_group_id or "")
-    if source_id == target_id:
-        raise ControlError("不能将播放组合并到自身")
-    with GROUP_MUTATION_LOCK:
-        state = normalized_snapcast_state()
-        groups, _ = snapcast_indexes(state)
-        if len(groups) < 2:
-            raise ControlError("最后一个播放组不能删除")
-        if source_id not in groups or target_id not in groups:
-            raise ControlError("播放组不存在")
-        combined = [client["id"] for group in (groups[target_id], groups[source_id]) for client in group["clients"]]
-        snap_rpc("Group.SetClients", {"id": target_id, "clients": list(dict.fromkeys(combined))})
         return normalized_snapcast_state()
 
 
@@ -566,7 +446,7 @@ def combined_state() -> dict[str, Any]:
         player = {"available": True, **player_state()}
     except ControlError as exc:
         errors.append(str(exc))
-    return {"snapcast": snapcast, "zones": snapcast.get("groups", []), "sources": snapcast.get("streams", []), "player": player, "system": {"hostname": socket.gethostname()}, "errors": errors}
+    return {"snapcast": snapcast, "mainGroup": snapcast.get("mainGroup"), "zones": snapcast.get("groups", []), "sources": snapcast.get("streams", []), "player": player, "system": {"hostname": socket.gethostname()}, "errors": errors}
 
 
 def refresh_health() -> dict[str, Any]:
@@ -738,16 +618,8 @@ class Handler(BaseHTTPRequestHandler):
             elif path == "/api/snapcast/all-stream":
                 stream_id = str(body.get("streamId", ""))
                 result = [snap_rpc("Group.SetStream", {"id": group["id"], "stream_id": stream_id}) for group in normalized_snapcast_state()["groups"]]
-            elif path == "/api/snapcast/group-name":
-                result = set_group_name(body.get("groupId"), body.get("name"))
             elif path == "/api/snapcast/client-name":
                 result = set_client_name(body.get("clientId"), body.get("name"))
-            elif path == "/api/snapcast/group-members":
-                result = set_group_members(body.get("groupId"), body.get("clientIds"))
-            elif path == "/api/snapcast/group-create":
-                result = create_group(body.get("name"), body.get("clientIds"), body.get("streamId"))
-            elif path == "/api/snapcast/group-merge":
-                result = merge_groups(body.get("sourceGroupId"), body.get("targetGroupId"))
             elif path == "/api/sources/stop-all":
                 result = stop_all_sources()
             elif path == "/api/player/seek":
@@ -757,8 +629,6 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self.send_error(HTTPStatus.NOT_FOUND); return
             self.json_response({"ok": True, "result": result})
-        except GroupMutationError as exc:
-            self.json_response({"ok": False, "partialMutation": True, "error": str(exc), "rollbackErrors": exc.rollback_errors, "state": exc.state}, HTTPStatus.CONFLICT)
         except ControlError as exc:
             self.json_response({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
         except Exception as exc:

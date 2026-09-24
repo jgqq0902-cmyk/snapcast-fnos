@@ -5,6 +5,7 @@ export const state = {
   playerSyncedAt: 0,
   sources: [],
   zones: [],
+  mainGroup: null,
   selectedZoneId: localStorage.getItem("snaproomZone") || "",
 };
 

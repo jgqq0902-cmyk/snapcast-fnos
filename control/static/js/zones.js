@@ -5,10 +5,10 @@ import { $, $$, esc, icon, toast } from "./ui.js";
 let renderSignature = "";
 
 export function renderZones(force = false) {
-  const clients = state.zones.flatMap(zone => zone.clients || []);
+  const clients = state.mainGroup?.clients || [];
   $("#deviceCount").textContent = clients.length;
   const signature = JSON.stringify({
-    zones: state.zones,
+    mainGroup: state.mainGroup,
     sources: state.sources,
     player: { ...state.player, elapsed: 0 },
   });
@@ -16,13 +16,12 @@ export function renderZones(force = false) {
   renderSignature = signature;
   const host = $("#devicePanelHost");
   host.replaceChildren();
-  if (!state.zones.length) {
+  if (!state.mainGroup) {
     host.innerHTML = `<section class="state-panel"><svg class="state-mark" aria-hidden="true"><use href="/icons.svg#icon-speaker"/></svg><h2>暂未发现设备</h2><div class="state-actions"><button class="secondary-btn" data-empty-refresh>刷新</button></div></section>`;
     $("[data-empty-refresh]", host).onclick = () => document.dispatchEvent(new CustomEvent("state-refresh"));
     return;
   }
-  const zone = [...state.zones].sort((a, b) => (b.clients?.length || 0) - (a.clients?.length || 0))[0];
-  host.append(devicesPanel(zone));
+  host.append(devicesPanel(state.mainGroup));
 }
 
 function devicesPanel(zone) {
@@ -37,7 +36,7 @@ function devicesPanel(zone) {
 }
 
 function clientCard(client, index) {
-  const active = client.active ?? !client.muted;
+  const active = client.participating ?? client.active ?? !client.muted;
   const card = document.createElement("article");
   const variant = speakerVariant(client.name, client.id, index);
   card.className = `speaker-unit${client.connected ? "" : " is-offline"}${active ? " is-active" : " is-inactive"}${client.audible ? " is-audible" : ""}`;

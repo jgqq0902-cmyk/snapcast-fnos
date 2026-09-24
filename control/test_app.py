@@ -12,10 +12,10 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import app as app_module
 from app import (
-    ControlError, GroupMutationError, Handler, clamp_int, create_group,
-    login_allowed, merge_groups, normalized_snapcast_state, parse_mpd,
+    ControlError, Handler, clamp_int,
+    login_allowed, normalized_snapcast_state, parse_mpd,
     player_state, reconcile_main_group, seek_player, set_player_volume,
-    record_login_failure, set_client_name, set_group_members, set_group_name,
+    record_login_failure, set_client_name,
     set_client_active, set_zone_volume, song_payload, source_descriptor, stop_all_sources,
 )
 
@@ -73,7 +73,7 @@ class ControlHelpersTest(unittest.TestCase):
         self.assertTrue(login_allowed("192.0.2.9", now=110)[0])
         self.assertTrue(login_allowed("192.0.2.8", now=200)[0])
 
-    def test_snapcast_normalization_preserves_groups(self):
+    def test_snapcast_normalization_exposes_explicit_main_group(self):
         server = {"server": {"streams": [{"id": "DLNA", "status": "playing", "uri": {"query": {}}}], "groups": [
             {"id": "g1", "name": "客厅", "stream_id": "DLNA", "clients": []},
             {"id": "g2", "name": "书房", "stream_id": "DLNA", "clients": []},
@@ -81,6 +81,8 @@ class ControlHelpersTest(unittest.TestCase):
         with patch("app.snap_rpc", return_value=server):
             state = normalized_snapcast_state()
         self.assertEqual([group["id"] for group in state["groups"]], ["g1", "g2"])
+        self.assertEqual(state["mainGroupId"], "g1")
+        self.assertEqual(state["mainGroup"]["id"], "g1")
 
     def test_zone_volume_scales_connected_clients_proportionally(self):
         zones = {"groups": [{"id": "g1", "clients": [
@@ -134,64 +136,11 @@ class ControlHelpersTest(unittest.TestCase):
     def snap_state(groups, streams=None):
         return {"groups": groups, "streams": streams or [{"id": "Default", "status": "idle"}]}
 
-    def test_group_and_client_rename_validate_state(self):
+    def test_client_rename_validates_state(self):
         state = self.snap_state([{"id": "g1", "name": "客厅", "clients": [{"id": "c1"}]}])
         with patch("app.normalized_snapcast_state", return_value=state), patch("app.snap_rpc", return_value={}) as rpc:
-            set_group_name("g1", "影音室")
             set_client_name("c1", "左音箱")
-        self.assertEqual(rpc.call_args_list[0].args, ("Group.SetName", {"id": "g1", "name": "影音室"}))
-
-    def test_group_members_reject_duplicates_and_unknown_clients(self):
-        state = self.snap_state([{"id": "g1", "clients": [{"id": "c1"}]}])
-        with patch("app.normalized_snapcast_state", return_value=state):
-            with self.assertRaises(ControlError):
-                set_group_members("g1", ["c1", "c1"])
-            with self.assertRaises(ControlError):
-                set_group_members("g1", ["missing"])
-
-    def test_create_group_success(self):
-        initial = self.snap_state([
-            {"id": "g1", "name": "A", "streamId": "Default", "clients": [{"id": "c1"}, {"id": "c2"}]},
-            {"id": "g2", "name": "B", "streamId": "Default", "clients": [{"id": "c3"}]},
-        ])
-        split = self.snap_state([
-            {"id": "g1", "name": "A", "streamId": "Default", "clients": [{"id": "c2"}]},
-            {"id": "g3", "name": "播放组", "streamId": "Default", "clients": [{"id": "c1"}]},
-            {"id": "g2", "name": "B", "streamId": "Default", "clients": [{"id": "c3"}]},
-        ])
-        final = self.snap_state([{"id": "g3", "name": "新组", "streamId": "Default", "clients": [{"id": "c1"}, {"id": "c3"}]}])
-        with patch("app.normalized_snapcast_state", side_effect=[initial, split, final]), patch("app.snap_rpc", return_value={}) as rpc:
-            create_group("新组", ["c1", "c3"], "Default")
-        self.assertIn(("Group.SetName", {"id": "g3", "name": "新组"}), [call.args for call in rpc.call_args_list])
-
-    def test_create_group_failure_attempts_rollback_and_reports_partial_state(self):
-        initial = self.snap_state([
-            {"id": "g1", "name": "A", "streamId": "Default", "clients": [{"id": "c1"}, {"id": "c2"}]},
-            {"id": "g2", "name": "B", "streamId": "DLNA", "clients": [{"id": "c3"}]},
-        ], [{"id": "Default"}, {"id": "DLNA"}])
-        split = self.snap_state([
-            {"id": "g1", "name": "A", "streamId": "Default", "clients": [{"id": "c2"}]},
-            {"id": "auto", "name": "播放组", "streamId": "Default", "clients": [{"id": "c1"}]},
-            {"id": "g2", "name": "B", "streamId": "DLNA", "clients": [{"id": "c3"}]},
-        ], initial["streams"])
-        states = [initial, split, split, split, initial]
-        calls = []
-        def rpc(method, params):
-            calls.append((method, params))
-            if method == "Group.SetClients" and params.get("id") == "auto" and params["clients"] == ["c1", "c3"]:
-                raise ControlError("injected")
-            return {}
-        with patch("app.normalized_snapcast_state", side_effect=states), patch("app.snap_rpc", side_effect=rpc):
-            with self.assertRaises(GroupMutationError) as error:
-                create_group("新组", ["c1", "c3"], "Default")
-        self.assertTrue(any(method == "Group.SetClients" and params["clients"] == ["c1", "c2"] for method, params in calls))
-        self.assertIn("创建播放组失败", str(error.exception))
-
-    def test_merge_groups_protects_last_group(self):
-        one = self.snap_state([{"id": "g1", "clients": [{"id": "c1"}]}])
-        with patch("app.normalized_snapcast_state", return_value=one):
-            with self.assertRaises(ControlError):
-                merge_groups("g1", "g2")
+        self.assertEqual(rpc.call_args.args, ("Client.SetName", {"id": "c1", "name": "左音箱"}))
 
     def test_stop_all_keeps_queue_and_skips_idle_airplay(self):
         idle = self.snap_state([], [{"id": "Airplay", "status": "idle"}, {"id": "DLNA", "status": "idle"}])
@@ -372,6 +321,8 @@ class ProductionConfigTest(unittest.TestCase):
         self.assertNotIn("data-main-source", zones)
         self.assertIn("prefers-reduced-motion", mympd_css)
         self.assertNotIn('data-route="settings"', index)
+        self.assertNotIn("group-manager.css", index)
+        self.assertFalse((Path(__file__).parent / "static" / "js" / "groups.js").exists())
 
     def test_native_lightfield_player_contract(self):
         static = Path(__file__).parent / "static"
