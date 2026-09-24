@@ -10,6 +10,7 @@ container_name=$(sed -n 's/^CONTAINER_NAME=//p' "$project_dir/.env" 2>/dev/null 
 image_name=${image_name:-snapcast-all-in-one:local}
 container_name=${container_name:-snapcast}
 backup_image="${image_name%:*}:backup-$timestamp"
+state_archive="$backup_dir/persistent-config.tar"
 
 cd "$project_dir"
 [ -f .env ] || { echo "Missing .env; copy .env.example and configure it first." >&2; exit 1; }
@@ -27,6 +28,15 @@ mkdir -p "$backup_dir"
 cp docker-compose.yml snapserver.conf "$backup_dir/"
 [ ! -f config/snapserver.conf ] || cp config/snapserver.conf "$backup_dir/snapserver.runtime.conf"
 docker cp "$container_name:/app/control" "$backup_dir/control-running" 2>/dev/null || true
+docker exec "$container_name" sh -eu -c '
+    rm -rf /tmp/snaproom-upgrade-state
+    mkdir -p /tmp/snaproom-upgrade-state/data/mympd/work /tmp/snaproom-upgrade-state/data/dlna
+    for path in data/mympd/work/config data/mympd/work/state data/dlna/playlists data/.snaproom-schema-version; do
+        [ ! -e "/app/$path" ] || cp -a "/app/$path" "/tmp/snaproom-upgrade-state/$(dirname "$path")/"
+    done
+    tar -C /tmp/snaproom-upgrade-state -cpf /tmp/snaproom-persistent-config.tar .
+'
+docker cp "$container_name:/tmp/snaproom-persistent-config.tar" "$state_archive"
 
 old_image=$(docker inspect --format '{{.Image}}' "$container_name")
 docker image tag "$old_image" "$backup_image"
@@ -48,4 +58,13 @@ if [ -f "$backup_dir/snapserver.runtime.conf" ]; then
 fi
 docker image tag "$backup_image" "$image_name"
 docker compose up -d --remove-orphans --wait --wait-timeout 180
+docker cp "$state_archive" "$container_name:/tmp/snaproom-persistent-config.tar"
+docker exec "$container_name" sh -eu -c '
+    rm -rf /app/data/mympd/work/config /app/data/mympd/work/state /app/data/dlna/playlists
+    rm -f /app/data/.snaproom-schema-version
+    tar -C /app -xpf /tmp/snaproom-persistent-config.tar
+    chown -R snapcast:snapcast /app/data/mympd/work /app/data/dlna/playlists /app/data/.snaproom-schema-version 2>/dev/null || true
+'
+docker restart "$container_name" >/dev/null
+docker compose up -d --wait --wait-timeout 180
 exit 1

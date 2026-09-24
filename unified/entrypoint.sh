@@ -16,6 +16,15 @@ mkdir -p /app/data/dlna/music /app/data/dlna/playlists /app/data/dlna/cache \
          /app/data/mympd/work /app/data/mympd/cache \
          /app/data/nginx/client_body /app/data/nginx/proxy /app/data/nginx/fastcgi \
          /app/data/nginx/uwsgi /app/data/nginx/scgi /app/data/nginx/logs
+schema_version=${DATA_SCHEMA_VERSION:-1}
+case "$schema_version" in *[!0-9]*|'') echo "DATA_SCHEMA_VERSION must be numeric" >&2; exit 1 ;; esac
+schema_marker=/app/data/.snaproom-schema-version
+installed_schema=0
+[ ! -f "$schema_marker" ] || installed_schema=$(cat "$schema_marker")
+case "$installed_schema" in *[!0-9]*|'') echo "Invalid data schema marker" >&2; exit 1 ;; esac
+[ "$installed_schema" -le "$schema_version" ] || { echo "Data schema $installed_schema is newer than supported schema $schema_version" >&2; exit 1; }
+printf '%s\n' "$schema_version" > "${schema_marker}.tmp"
+mv "${schema_marker}.tmp" "$schema_marker"
 radio_source=/app/unified/radio-stations.m3u
 radio_target=/app/data/dlna/playlists/网络收音机.m3u
 if [ -r "$radio_source" ] && { [ ! -f "$radio_target" ] || ! cmp -s "$radio_source" "$radio_target"; }; then
@@ -40,6 +49,7 @@ if [ ! -f "$ownership_marker" ]; then
     : > "$ownership_marker"
     chown snapcast:snapcast "$ownership_marker"
 fi
+chown snapcast:snapcast "$schema_marker"
 chown -R snapcast:snapcast /app/data/nginx
 
 web_port=${WEB_PORT:-1781}

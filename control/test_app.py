@@ -306,6 +306,16 @@ class ProductionConfigTest(unittest.TestCase):
         self.assertIn(".device-shell { padding-left: 0; padding-bottom: 0; }", styles)
         self.assertIn(".dashboard { grid-template-columns: 1fr; }", styles)
 
+    def test_deployment_backup_covers_persistent_configuration(self):
+        project = Path(__file__).parents[1]
+        deploy = (project / "unified" / "deploy-console.sh").read_text(encoding="utf-8")
+        entrypoint = (project / "unified" / "entrypoint.sh").read_text(encoding="utf-8")
+        for path in ("data/mympd/work/config", "data/mympd/work/state", "data/dlna/playlists", "data/.snaproom-schema-version"):
+            self.assertIn(path, deploy)
+        self.assertIn("persistent-config.tar", deploy)
+        self.assertIn("DATA_SCHEMA_VERSION", entrypoint)
+        self.assertIn(".snaproom-schema-version", entrypoint)
+
     def test_dual_panel_ui_and_mympd_skin_contract(self):
         project = Path(__file__).parents[1]
         index = (Path(__file__).parent / "static" / "index.html").read_text(encoding="utf-8")

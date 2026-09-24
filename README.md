@@ -131,12 +131,13 @@ GATEWAY_IP="$GATEWAY_IP" python unified/verify_discovery.py
 
 ## 回滚
 
-部署脚本失败时会自动恢复旧镜像和运行时 Snapserver 配置。手工回滚时使用脚本输出的备份标签：
+部署脚本在构建前会备份旧镜像、运行时 Snapserver 配置、myMPD `config/state`、MPD 歌单和数据 schema 标记。失败时会恢复上述配置型持久数据并重启旧镜像；myMPD cache 和 MPD database 属于可再生成数据，不进入备份。手工回滚时使用脚本输出的备份标签和目录：
 
 ```sh
 docker image tag snapcast-all-in-one:backup-YYYYMMDD-HHMMSS snapcast-all-in-one:local
 cp backups/YYYYMMDD-HHMMSS-audit-remediation/snapserver.runtime.conf config/snapserver.conf
 docker compose up -d --remove-orphans --wait --wait-timeout 180
+# 持久配置应优先交由 deploy-console.sh 自动恢复；手工恢复前必须先停止容器。
 ```
 
 不要删除 `data/`；其中包含 MPD 数据库、歌单、曲库配置和 Snapcast 的 `server.json`。
