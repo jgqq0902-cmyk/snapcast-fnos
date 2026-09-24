@@ -40,6 +40,7 @@ assert_matching_process_user() {
 for process in snapserver dbus-daemon avahi-daemon shairport-sync mpd mympd upmpdcli nginx; do
     assert_process_user "$process"
 done
+assert_process_user supervisord
 pgrep -f '/app/unified/dlna_relay.py' >/dev/null || fail "dlna-relay is not running"
 assert_matching_process_user control '/app/control/app.py'
 

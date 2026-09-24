@@ -325,6 +325,9 @@ class ProductionConfigTest(unittest.TestCase):
         self.assertIn("persistent-config.tar", deploy)
         self.assertIn("DATA_SCHEMA_VERSION", entrypoint)
         self.assertIn(".snaproom-schema-version", entrypoint)
+        self.assertIn('setpriv --reuid="$puid" --regid="$pgid" --init-groups', entrypoint)
+        supervisor = (project / "unified" / "supervisord.conf").read_text(encoding="utf-8")
+        self.assertNotIn("user=root", supervisor)
 
     def test_dual_panel_ui_and_mympd_skin_contract(self):
         project = Path(__file__).parents[1]

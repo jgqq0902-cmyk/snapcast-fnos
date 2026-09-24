@@ -60,6 +60,7 @@ chmod 600 .env
 - `CONFIG_DIR`、`DATA_DIR`、`CERTS_DIR` 和 `MEDIA_ROOT` 指向宿主持久化目录；默认前三项使用项目内相对路径。
 - `CONTROL_PASSWORD` 必须改为较长且唯一的密码，不要提交 `.env`。
 - `PUID`/`PGID` 应能读取曲库并写入项目的 `data` 目录。默认 `1000:1001` 适配 `/vol1/1000/music` 的当前 FNOS 权限；可用 `stat -c '%u:%g %a %n' /vol1/1000/music` 核实。
+- 容器入口仅在初始化 UID/GID、目录、FIFO 和代理配置时使用 root，随后通过 `setpriv` 将 PID 1/Supervisor 及全部长期服务降权到 `PUID:PGID`。
 
 3. 校验、构建并启动：
 
