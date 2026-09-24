@@ -88,5 +88,5 @@ sed -e "s/__WEB_PORT__/$web_port/g" \
     /app/unified/nginx.conf > /app/data/nginx.conf
 chown snapcast:snapcast /app/data/nginx.conf
 
-exec /bin/setpriv --reuid="$puid" --regid="$pgid" --init-groups \
-    /usr/bin/supervisord -c /app/unified/supervisord.conf
+exec /bin/su -p -s /bin/sh snapcast \
+    -c 'exec /usr/bin/supervisord -c /app/unified/supervisord.conf'

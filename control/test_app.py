@@ -325,7 +325,8 @@ class ProductionConfigTest(unittest.TestCase):
         self.assertIn("persistent-config.tar", deploy)
         self.assertIn("DATA_SCHEMA_VERSION", entrypoint)
         self.assertIn(".snaproom-schema-version", entrypoint)
-        self.assertIn('setpriv --reuid="$puid" --regid="$pgid" --init-groups', entrypoint)
+        self.assertIn("exec /bin/su -p -s /bin/sh snapcast", entrypoint)
+        self.assertIn("exec /usr/bin/supervisord", entrypoint)
         supervisor = (project / "unified" / "supervisord.conf").read_text(encoding="utf-8")
         self.assertNotIn("user=root", supervisor)
 
