@@ -11,6 +11,7 @@ image_name=${image_name:-snapcast-all-in-one:local}
 container_name=${container_name:-snapcast}
 backup_image="${image_name%:*}:backup-$timestamp"
 state_archive="$backup_dir/persistent-config.tar"
+container_state_archive="/tmp/snaproom-persistent-config-$timestamp.tar"
 
 cd "$project_dir"
 [ -f .env ] || { echo "Missing .env; copy .env.example and configure it first." >&2; exit 1; }
@@ -34,9 +35,9 @@ docker exec "$container_name" sh -eu -c '
     for path in data/mympd/work/config data/mympd/work/state data/dlna/playlists data/.snaproom-schema-version; do
         [ ! -e "/app/$path" ] || cp -a "/app/$path" "/tmp/snaproom-upgrade-state/$(dirname "$path")/"
     done
-    tar -C /tmp/snaproom-upgrade-state -cpf /tmp/snaproom-persistent-config.tar .
-'
-docker cp "$container_name:/tmp/snaproom-persistent-config.tar" "$state_archive"
+    tar -C /tmp/snaproom-upgrade-state -cpf "$1" .
+' _ "$container_state_archive"
+docker cp "$container_name:$container_state_archive" "$state_archive"
 
 old_image=$(docker inspect --format '{{.Image}}' "$container_name")
 docker image tag "$old_image" "$backup_image"
@@ -58,13 +59,13 @@ if [ -f "$backup_dir/snapserver.runtime.conf" ]; then
 fi
 docker image tag "$backup_image" "$image_name"
 docker compose up -d --remove-orphans --wait --wait-timeout 180
-docker cp "$state_archive" "$container_name:/tmp/snaproom-persistent-config.tar"
+docker cp "$state_archive" "$container_name:$container_state_archive"
 docker exec "$container_name" sh -eu -c '
     rm -rf /app/data/mympd/work/config /app/data/mympd/work/state /app/data/dlna/playlists
     rm -f /app/data/.snaproom-schema-version
-    tar -C /app -xpf /tmp/snaproom-persistent-config.tar
+    tar -C /app -xpf "$1"
     chown -R snapcast:snapcast /app/data/mympd/work /app/data/dlna/playlists /app/data/.snaproom-schema-version 2>/dev/null || true
-'
+' _ "$container_state_archive"
 docker restart "$container_name" >/dev/null
 docker compose up -d --wait --wait-timeout 180
 exit 1

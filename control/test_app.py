@@ -323,6 +323,7 @@ class ProductionConfigTest(unittest.TestCase):
         for path in ("data/mympd/work/config", "data/mympd/work/state", "data/dlna/playlists", "data/.snaproom-schema-version"):
             self.assertIn(path, deploy)
         self.assertIn("persistent-config.tar", deploy)
+        self.assertIn("snaproom-persistent-config-$timestamp.tar", deploy)
         self.assertIn("DATA_SCHEMA_VERSION", entrypoint)
         self.assertIn(".snaproom-schema-version", entrypoint)
         self.assertIn("exec /bin/su -p -s /bin/sh snapcast", entrypoint)
