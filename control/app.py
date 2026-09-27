@@ -6,7 +6,6 @@ import hmac
 import ipaddress
 import itertools
 import json
-import math
 import mimetypes
 import os
 import secrets
@@ -69,6 +68,21 @@ MYMPD_ALLOWED_METHODS = frozenset({
     "MYMPD_API_PLAYLIST_RENAME", "MYMPD_API_PLAYLIST_RM", "MYMPD_API_PLAYLIST_CONTENT_RM_POSITIONS",
     "MYMPD_API_PLAYLIST_CONTENT_MOVE_POSITION", "MYMPD_API_WEBRADIO_FAVORITE_SEARCH",
 })
+MYMPD_URI_METHODS = frozenset({
+    "MYMPD_API_QUEUE_REPLACE_URIS", "MYMPD_API_QUEUE_APPEND_URIS",
+    "MYMPD_API_PLAYLIST_CONTENT_APPEND_URIS",
+})
+MYMPD_PLAYLIST_METHODS = frozenset({
+    "MYMPD_API_QUEUE_REPLACE_PLAYLISTS", "MYMPD_API_PLAYLIST_CONTENT_LIST",
+    "MYMPD_API_PLAYLIST_CONTENT_APPEND_URIS", "MYMPD_API_PLAYLIST_RENAME",
+    "MYMPD_API_PLAYLIST_RM", "MYMPD_API_PLAYLIST_CONTENT_RM_POSITIONS",
+    "MYMPD_API_PLAYLIST_CONTENT_MOVE_POSITION",
+})
+MAX_RPC_LIST_ITEMS = 1000
+MAX_RPC_URI_ITEMS = 200
+MAX_RPC_URI_LENGTH = 4096
+MAX_RPC_NAME_LENGTH = 200
+MAX_RPC_EXPRESSION_LENGTH = 2048
 
 
 class ControlError(RuntimeError):
@@ -212,75 +226,6 @@ def mpd_command(command: str, timeout: float = 3) -> list[str]:
         raise ControlError(f"播放器暂不可用：{exc}") from exc
 
 
-def parse_mpd(lines: list[str]) -> dict[str, Any]:
-    result: dict[str, Any] = {}
-    for line in lines:
-        key, separator, value = line.partition(": ")
-        if separator:
-            result[key] = value
-    return result
-
-
-def song_payload(song: dict[str, Any]) -> dict[str, Any]:
-    uri = str(song.get("file", ""))
-    title = str(song.get("Title") or Path(uri).stem or "等待播放")
-    return {
-        "file": uri,
-        "title": title,
-        "artist": str(song.get("Artist") or "未知歌手"),
-        "album": str(song.get("Album") or ""),
-        "duration": float(song.get("duration", 0) or 0),
-    }
-
-
-def player_state() -> dict[str, Any]:
-    status = parse_mpd(mpd_command("status"))
-    song = song_payload(parse_mpd(mpd_command("currentsong")))
-    duration = float(status.get("duration", song["duration"]) or 0)
-    uri = song["file"].strip()
-    scheme = urlparse(uri).scheme.casefold()
-    playing = status.get("state", "stop") in {"play", "pause"}
-    if scheme in {"http", "https"}:
-        origin = "radio" if duration <= 0 else "dlna"
-    elif uri:
-        origin = "local"
-    else:
-        origin = "unknown"
-    return {
-        "state": status.get("state", "stop"),
-        "elapsed": float(status.get("elapsed", 0) or 0),
-        "duration": duration,
-        "song": song,
-        "audio": status.get("audio", ""),
-        "volume": min(100, max(0, int(status.get("volume", 0) or 0))),
-        "sourceType": "mpd",
-        "origin": origin,
-        "live": playing and origin == "radio",
-        "seekable": playing and duration > 0 and origin in {"local", "dlna"},
-    }
-
-
-def seek_player(position: Any) -> dict[str, Any]:
-    try:
-        target = float(position)
-    except (TypeError, ValueError) as exc:
-        raise ControlError("播放位置必须是秒数") from exc
-    if not math.isfinite(target):
-        raise ControlError("播放位置无效")
-    current = player_state()
-    if not current["seekable"]:
-        raise ControlError("当前音源不支持跳转")
-    target = max(0.0, min(target, current["duration"]))
-    mpd_command(f"seekcur {target:.3f}")
-    return player_state()
-
-
-def set_player_volume(percent: Any) -> dict[str, Any]:
-    value = clamp_int(percent, 0, 100, "音源音量")
-    mpd_command(f"setvol {value}")
-    return player_state()
-
-
 def source_type(stream_id: Any) -> str:
     return {"airplay": "airplay", "dlna": "mpd", "default": "auto"}.get(str(stream_id).strip().casefold(), "unknown")
 
@@ -340,19 +285,6 @@ def normalized_snapcast_state() -> dict[str, Any]:
     return {"streams": streams, "groups": groups, "mainGroupId": main_group["id"] if main_group else "", "mainGroup": main_group}
 
 
-def set_zone_volume(group_id: Any, percent: Any, muted: bool = False) -> list[Any]:
-    identifier = str(group_id)
-    value = clamp_int(percent, 0, 100, "音量")
-    group = next((item for item in normalized_snapcast_state()["groups"] if item["id"] == identifier), None)
-    if group is None:
-        raise ControlError("播放区域不存在")
-    connected = [client for client in group["clients"] if client["connected"] and client.get("active", not client.get("muted", False))]
-    if not connected:
-        raise ControlError("没有已激活的在线设备")
-    peak = max((client["volume"] for client in connected), default=0)
-    return [snap_rpc("Client.SetVolume", {"id": client["id"], "volume": {"muted": muted, "percent": value if peak == 0 else min(100, int(client["volume"] * value / peak + 0.5))}}) for client in connected]
-
-
 def set_client_active(client_id: Any, active: Any) -> dict[str, Any]:
     identifier = str(client_id or "")
     if not isinstance(active, bool):
@@ -380,14 +312,13 @@ def reconcile_main_group() -> dict[str, Any]:
         ))
         target_ids = [client["id"] for client in target["clients"]]
         topology_changed = len(groups) > 1 or target_ids != client_ids
-        first_reconciliation = target.get("name") != MAIN_GROUP_NAME
         if topology_changed:
             snap_rpc("Group.SetClients", {"id": target["id"], "clients": client_ids})
             state = normalized_snapcast_state()
             target = next((group for group in state["groups"] if client_ids[0] in {client["id"] for client in group["clients"]}), target)
         if target.get("name") != MAIN_GROUP_NAME:
             snap_rpc("Group.SetName", {"id": target["id"], "name": MAIN_GROUP_NAME})
-        if (topology_changed or first_reconciliation) and target.get("streamId") != "Default":
+        if target.get("streamId") != "Default":
             snap_rpc("Group.SetStream", {"id": target["id"], "stream_id": "Default"})
         return normalized_snapcast_state()
 
@@ -453,17 +384,13 @@ def stop_all_sources() -> dict[str, Any]:
 
 def combined_state() -> dict[str, Any]:
     errors: list[str] = []
-    snapcast, player = {"available": False, "streams": [], "groups": []}, {"available": False, "state": "stop", "song": {}}
+    snapcast = {"available": False, "streams": [], "groups": []}
     try:
         snapcast = {"available": True, **normalized_snapcast_state()}
     except ControlError as exc:
         errors.append(str(exc))
-    try:
-        player = {"available": True, **player_state()}
-    except ControlError as exc:
-        errors.append(str(exc))
     health = health_snapshot()
-    return {"snapcast": snapcast, "mainGroup": snapcast.get("mainGroup"), "zones": snapcast.get("groups", []), "sources": snapcast.get("streams", []), "player": player, "system": {"hostname": socket.gethostname(), **health}, "errors": errors}
+    return {"snapcast": snapcast, "mainGroup": snapcast.get("mainGroup"), "zones": snapcast.get("groups", []), "sources": snapcast.get("streams", []), "system": {"hostname": socket.gethostname(), **health}, "errors": errors}
 
 
 def refresh_health() -> dict[str, Any]:
@@ -495,13 +422,65 @@ def health_snapshot() -> dict[str, Any]:
         return dict(HEALTH_STATE)
 
 
+def _bounded_text(value: Any, label: str, maximum: int, *, allow_empty: bool = False) -> str:
+    if not isinstance(value, str):
+        raise ControlError(f"{label}格式无效")
+    text = value.strip()
+    if (not text and not allow_empty) or len(text) > maximum or any(ord(char) < 32 for char in text):
+        raise ControlError(f"{label}长度或字符无效")
+    return text
+
+
+def _bounded_list(value: Any, label: str, maximum: int, *, allow_empty: bool = False) -> list[Any]:
+    if not isinstance(value, list) or (not value and not allow_empty) or len(value) > maximum:
+        raise ControlError(f"{label}数量无效")
+    return value
+
+
+def validate_mympd_params(method: str, params: Any) -> dict[str, Any]:
+    if not isinstance(params, dict):
+        raise ControlError("播放器参数必须为对象")
+    expression = params.get("expression")
+    if expression is not None:
+        _bounded_text(expression, "搜索表达式", MAX_RPC_EXPRESSION_LENGTH, allow_empty=True)
+    for key in ("limit", "offset"):
+        if key in params:
+            value = params[key]
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0 or value > MAX_RPC_LIST_ITEMS:
+                raise ControlError(f"{key}超出允许范围")
+    if method in MYMPD_URI_METHODS:
+        for uri in _bounded_list(params.get("uris"), "URI", MAX_RPC_URI_ITEMS):
+            uri = _bounded_text(uri, "URI", MAX_RPC_URI_LENGTH)
+            scheme = urllib.parse.urlsplit(uri).scheme.casefold()
+            if scheme not in {"", "http", "https", "mympd"}:
+                raise ControlError("URI 协议不受支持")
+    if method in MYMPD_PLAYLIST_METHODS:
+        if method in {"MYMPD_API_PLAYLIST_CONTENT_LIST", "MYMPD_API_PLAYLIST_CONTENT_APPEND_URIS", "MYMPD_API_PLAYLIST_RENAME", "MYMPD_API_PLAYLIST_CONTENT_RM_POSITIONS", "MYMPD_API_PLAYLIST_CONTENT_MOVE_POSITION"} and "plist" not in params:
+            raise ControlError("缺少歌单名称")
+        if "plist" in params:
+            _bounded_text(params["plist"], "歌单名称", MAX_RPC_NAME_LENGTH)
+        if method == "MYMPD_API_PLAYLIST_RENAME" and "newName" not in params:
+            raise ControlError("缺少新歌单名称")
+        if "newName" in params:
+            _bounded_text(params["newName"], "新歌单名称", MAX_RPC_NAME_LENGTH)
+        if method in {"MYMPD_API_QUEUE_REPLACE_PLAYLISTS", "MYMPD_API_PLAYLIST_RM"} and "plists" not in params:
+            raise ControlError("缺少歌单列表")
+        if "plists" in params:
+            for name in _bounded_list(params["plists"], "歌单", MAX_RPC_LIST_ITEMS):
+                _bounded_text(name, "歌单名称", MAX_RPC_NAME_LENGTH)
+    for key in ("songIds", "positions"):
+        if key in params:
+            for identifier in _bounded_list(params[key], key, MAX_RPC_LIST_ITEMS):
+                if isinstance(identifier, bool) or not isinstance(identifier, int) or identifier < 0:
+                    raise ControlError(f"{key}包含无效编号")
+    return params
+
+
 def proxy_mympd_rpc(payload: dict[str, Any]) -> dict[str, Any]:
     method = payload.get("method")
     if method not in MYMPD_ALLOWED_METHODS:
         raise ControlError("播放器方法不在允许列表中")
-    params = payload.get("params", {})
-    if not isinstance(params, (dict, list)):
-        raise ControlError("播放器参数格式无效")
+    params = validate_mympd_params(method, payload.get("params", {}))
     request_body = json.dumps({"jsonrpc": "2.0", "id": payload.get("id", 1), "method": method, "params": params}, separators=(",", ":")).encode()
     request = urllib.request.Request(MYMPD_RPC_URL, data=request_body, headers={"Content-Type": "application/json"})
     try:
@@ -697,23 +676,12 @@ class Handler(BaseHTTPRequestHandler):
                 result = snap_rpc("Client.SetVolume", {"id": str(body.get("clientId", "")), "volume": {"muted": bool(body.get("muted", False)), "percent": clamp_int(body.get("percent"), 0, 100, "音量")}})
             elif path == "/api/snapcast/latency":
                 result = snap_rpc("Client.SetLatency", {"id": str(body.get("clientId", "")), "latency": clamp_int(body.get("latency"), -1000, 5000, "延迟")})
-            elif path == "/api/snapcast/group-volume":
-                result = set_zone_volume(body.get("groupId", ""), body.get("percent"), bool(body.get("muted", False)))
             elif path == "/api/snapcast/client-active":
                 result = set_client_active(body.get("clientId"), body.get("active"))
-            elif path == "/api/snapcast/stream":
-                result = snap_rpc("Group.SetStream", {"id": str(body.get("groupId", "")), "stream_id": str(body.get("streamId", ""))})
-            elif path == "/api/snapcast/all-stream":
-                stream_id = str(body.get("streamId", ""))
-                result = [snap_rpc("Group.SetStream", {"id": group["id"], "stream_id": stream_id}) for group in normalized_snapcast_state()["groups"]]
             elif path == "/api/snapcast/client-name":
                 result = set_client_name(body.get("clientId"), body.get("name"))
             elif path == "/api/sources/stop-all":
                 result = stop_all_sources()
-            elif path == "/api/player/seek":
-                result = seek_player(body.get("position"))
-            elif path == "/api/player/volume":
-                result = set_player_volume(body.get("percent"))
             else:
                 self.send_error(HTTPStatus.NOT_FOUND); return
             self.json_response({"ok": True, "result": result})

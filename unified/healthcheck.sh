@@ -14,7 +14,7 @@ test -p /app/data/airplayfifo
 test -p /app/data/dlnafifo
 internal_mympd_port=${MYMPD_INTERNAL_PORT:-1782}
 python3 -c 'import socket; [socket.create_connection(("127.0.0.1", port), 1).close() for port in (1790, 6601)]'
-web_port=${WEB_PORT:-1781}
+control_port=${CONTROL_INTERNAL_PORT:-1783}
 wget -qO- "http://127.0.0.1:$internal_mympd_port/" >/dev/null
 
-exec /usr/bin/python3 -c "import json, urllib.request; state=json.load(urllib.request.urlopen('http://127.0.0.1:$web_port/api/health', timeout=2)); assert state['ok'], state"
+exec /usr/bin/python3 -c "import json, urllib.request; state=json.load(urllib.request.urlopen('http://127.0.0.1:$control_port/api/health', timeout=2)); assert state['ok'], state"

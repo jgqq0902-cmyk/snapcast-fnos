@@ -1,0 +1,47 @@
+services:
+  snapcast:
+    build:
+      context: .
+      dockerfile: unified/Dockerfile
+    image: snapcast-all-in-one:ci
+    hostname: snapcast-ci
+    user: "0:0"
+    environment:
+      PUID: 1000
+      PGID: 1001
+      GATEWAY_IP: 172.30.0.2
+      DLNA_RELAY_ALLOWED_LAN_CIDRS: 172.30.0.0/24
+      CONTROL_AUTH_ENABLED: "true"
+      CONTROL_USERNAME: admin
+      CONTROL_PASSWORD: ci-only-password-not-for-production
+      WEB_PORT: 1781
+      CONTROL_INTERNAL_PORT: 1783
+      MYMPD_INTERNAL_PORT: 1782
+      WEB_TLS_ENABLED: ${WEB_TLS_ENABLED:-false}
+      TLS_CERT: /app/certs/fullchain.pem
+      TLS_KEY: /app/certs/privkey.pem
+    volumes:
+      - ./snapserver.conf:/app/config/snapserver.conf:ro
+      - ci-data:/app/data
+      - ${CI_CERTS_DIR:-./.ci-certs}:/app/certs:ro
+      - ci-media:/media:ro
+    networks:
+      ci_audio:
+        ipv4_address: 172.30.0.2
+    healthcheck:
+      test: ["CMD", "/bin/sh", "/app/unified/healthcheck.sh"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 20s
+
+networks:
+  ci_audio:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+
+volumes:
+  ci-data:
+  ci-media:

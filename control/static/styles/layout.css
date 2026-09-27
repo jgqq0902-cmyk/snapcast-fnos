@@ -1,4 +1,4 @@
-.app-shell { position: relative; min-height: 100vh; padding-left: var(--sidebar); padding-bottom: var(--player-height); }
+.app-shell { position: relative; min-height: 100vh; }
 .device-shell { padding-left: 0; background: radial-gradient(circle at 16% 10%, rgb(71 218 186 / .14), transparent 28%), radial-gradient(circle at 88% 76%, rgb(84 60 255 / .15), transparent 34%), linear-gradient(145deg, #07100f, #10151d 52%, #090b13); }
 .brand { display: flex; align-items: center; gap: 6px; padding: 0 10px 35px; color: inherit; font-size: 21px; letter-spacing: .05em; text-decoration: none; }
 .brand i { color: var(--text-secondary); font-family: serif; font-weight: 400; }

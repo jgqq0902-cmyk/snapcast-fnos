@@ -4,7 +4,7 @@ set -eu
 umask 0002
 
 puid=${PUID:-1000}
-pgid=${PGID:-1000}
+pgid=${PGID:-1001}
 case "$puid:$pgid" in
     *[!0-9:]*|:*|*:) echo "PUID and PGID must be numeric" >&2; exit 1 ;;
 esac

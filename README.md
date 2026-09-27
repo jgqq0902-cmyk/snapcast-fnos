@@ -60,7 +60,7 @@ chmod 600 .env
 - `CONFIG_DIR`、`DATA_DIR`、`CERTS_DIR` 和 `MEDIA_ROOT` 指向宿主持久化目录；默认前三项使用项目内相对路径。
 - `CONTROL_PASSWORD` 必须改为较长且唯一的密码，不要提交 `.env`。
 - `PUID`/`PGID` 应能读取曲库并写入项目的 `data` 目录。默认 `1000:1001` 适配 `/vol1/1000/music` 的当前 FNOS 权限；可用 `stat -c '%u:%g %a %n' /vol1/1000/music` 核实。
-- 容器入口仅在初始化 UID/GID、目录、FIFO 和代理配置时使用 root，随后通过 `setpriv` 将 PID 1/Supervisor 及全部长期服务降权到 `PUID:PGID`。
+- 容器入口仅在初始化 UID/GID、目录、FIFO 和代理配置时使用 root，随后通过 Alpine BusyBox `su` 将 PID 1/Supervisor 及全部长期服务降权到 `PUID:PGID`。
 
 3. 校验、构建并启动：
 
@@ -102,15 +102,11 @@ sh unified/deploy-console.sh
 ```sh
 python -m unittest control.test_app -q
 python -m unittest unified.test_dlna_relay -v
-node --check control/static/app.js
-node --check control/static/js/api.js
-node --check control/static/js/store.js
-node --check control/static/js/ui.js
-node --check control/static/js/zones.js
+find control/static -type f -name '*.js' -print0 | xargs -0 -n1 node --check
 docker compose config -q
 ```
 
-GitHub Actions 会在每次 push 和 pull request 上运行全部 Python 单元测试、所有前端 ES Module 语法检查、Compose 校验和完整镜像构建。发布分支应在 GitHub 分支保护中将 `python-tests`、`js-syntax`、`docker-build` 设为必需检查。
+GitHub Actions 会在每次 push 和 pull request 上运行全部 Python 单元测试、所有前端 ES Module 语法检查、Compose 校验、完整镜像构建，以及 bridge 网络下的 HTTP/HTTPS 实际启动与容器冒烟。发布分支应在 GitHub 分支保护中将 `python-tests`、`js-syntax`、`docker-build`、`docker-smoke-http`、`docker-smoke-https` 设为必需检查。
 
 容器内检查：
 
@@ -157,7 +153,7 @@ docker compose up -d --remove-orphans --wait --wait-timeout 180
 - `control/static/styles/`：令牌、基础、双栏设备页、流体光域播放器与响应式样式
 - `control/static/icons.svg`、`control/static/art/`：原创本地图标 Sprite 与空状态美术；说明见 `icons/NOTICE.md`
 
-控制服务会把所有 Snapclient 幂等收敛到唯一“主播放组”，并由 API 显式返回 `mainGroup`。Snapcast Group 仅作为底层传输拓扑，不用于表达房间或场景；设备是否参与播放通过静音映射实现，并保留原音量和延迟。控制页不暴露底层 AirPlay、DLNA、Default 流选择，`Default` 会自动让 AirPlay 优先于 MPD/DLNA。音源音量直接控制 MPD 软件混音器，AirPlay 音量由发送端控制。MPD/DLNA 显示平滑进度，时长已知的本地或远程音频支持跳转；AirPlay 和直播流不会显示虚假可拖动进度。
+控制服务会把所有 Snapclient 幂等收敛到唯一“主播放组”，并由 API 显式返回 `mainGroup`。Snapcast Group 仅作为底层传输拓扑，不用于表达房间或场景；设备是否参与播放通过静音映射实现，并保留原音量和延迟。控制页和控制 API 均不暴露底层 AirPlay、DLNA、Default 流切换，主组会持续校准到 `Default`，让 AirPlay 自动优先于 MPD/DLNA。音源音量直接控制 MPD 软件混音器，AirPlay 音量由发送端控制。AirPlay 实际播放时左侧显示外部音源提示并禁用后台 MPD transport；曲库、队列、歌单和电台仍可浏览。MPD/DLNA 显示平滑进度，时长已知的本地或远程音频支持跳转；AirPlay 和直播流不会显示虚假可拖动进度。
 
 首页使用一个原生 ES Modules 播放器实例，通过同源 `/api/player/rpc`、`/api/player/art` 与 `/api/player/events` 使用 myMPD 的允许列表能力。五个标签依次为播放、队列、歌单、电台、曲库并默认打开播放。曲库搜索结果支持多选或全选后加入已有/新建歌单；歌单支持重命名、删除、移除及调整曲目顺序；队列可由 myMPD 从曲库随机生成 50 首。所有数据与操作均由 myMPD 提供，前端不建立第二套曲库或歌单存储。完整 myMPD 管理界面不再代理到 LAN，仅能在容器 loopback 内排障。
 

@@ -1,4 +1,3 @@
-:root { --player-height: 0px; }
 .header-actions { display: flex; align-items: center; gap: 10px; }
 .more-menu { position: relative; }
 .more-menu > summary { list-style: none; cursor: pointer; }

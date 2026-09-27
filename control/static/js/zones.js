@@ -10,7 +10,6 @@ export function renderZones(force = false) {
   const signature = JSON.stringify({
     mainGroup: state.mainGroup,
     sources: state.sources,
-    player: { ...state.player, elapsed: 0 },
   });
   if (!force && signature === renderSignature) return;
   renderSignature = signature;
@@ -43,7 +42,7 @@ function clientCard(client, index) {
   card.innerHTML = `<button class="speaker-toggle" aria-label="${esc(client.name)}${active ? "关闭" : "激活"}" ${client.connected ? "" : "disabled"}><span class="speaker-visual ${variant}" aria-hidden="true"><i></i><i></i><i></i></span><strong>${esc(client.name)}</strong><span class="speaker-light" aria-hidden="true"></span></button>
     <button class="speaker-settings" aria-label="打开 ${esc(client.name)} 设置">${icon("settings")}</button>
     <dialog class="device-dialog modal" aria-label="${esc(client.name)} 设置"><form class="device-dialog-card">
-      <header><div class="speaker-mini ${variant}" aria-hidden="true"><i></i></div><label><span>设备名称</span><input class="device-name" maxlength="120" value="${esc(client.name)}"></label><button type="button" class="dialog-close" aria-label="关闭">${icon("close")}</button></header>
+      <header><div class="speaker-mini ${variant}" aria-hidden="true"><i></i></div><label><span>设备名称</span><input class="device-name" maxlength="64" value="${esc(client.name)}"></label><button type="button" class="dialog-close" aria-label="关闭">${icon("close")}</button></header>
       <label class="device-volume-control"><span>${icon("volume")}</span><input aria-label="${esc(client.name)}音量" type="range" min="0" max="100" value="${client.volume}" ${client.connected && active ? "" : "disabled"}><output>${client.volume}</output></label>
       <section class="latency-control"><div><span>向右加快 · 向左减慢</span><output>${client.latency} ms</output></div><input class="latency-range" aria-label="${esc(client.name)}延迟" type="range" min="-500" max="500" step="10" dir="rtl" value="${Math.max(-500, Math.min(500, client.latency))}"><footer><button type="button" data-step="10" aria-label="声音减慢">＋</button><button type="button" data-zero aria-label="延迟归零">${icon("reset")}</button><label><input class="latency-number" type="number" min="-1000" max="5000" step="10" value="${client.latency}"><span>ms</span></label><button type="button" data-step="-10" aria-label="声音加快">−</button></footer></section>
       <button class="save-device-name" type="submit">保存</button>

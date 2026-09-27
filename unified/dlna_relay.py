@@ -200,15 +200,15 @@ class RelayHandler(BaseHTTPRequestHandler):
         try:
             requested_offset = parse_range(self.headers.get("Range"))
             upstream = open_upstream(source, requested_offset)
+        except RelayTargetError as exc:
+            print(f"dlna-relay blocked target: {exc}", flush=True)
+            self.send_error(HTTPStatus.FORBIDDEN, "upstream target is not allowed")
+            return
         except ValueError as exc:
             self.send_error(HTTPStatus.REQUESTED_RANGE_NOT_SATISFIABLE, str(exc))
             return
         except urllib.error.HTTPError as exc:
             self.send_error(exc.code, "upstream rejected the request")
-            return
-        except RelayTargetError as exc:
-            print(f"dlna-relay blocked target: {exc}", flush=True)
-            self.send_error(HTTPStatus.FORBIDDEN, "upstream target is not allowed")
             return
         except Exception as exc:
             print(f"dlna-relay open failed: {type(exc).__name__}: {exc}", flush=True)

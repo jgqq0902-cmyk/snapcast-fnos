@@ -57,7 +57,16 @@ assert_listener "$mympd_port" 0100007F
 assert_listener 1790 0100007F
 assert_listener 6601 0100007F
 
-wget -qO- "http://127.0.0.1:$web_port/api/health" >/dev/null || fail "public health check failed"
+tls_enabled=$(printf '%s' "${WEB_TLS_ENABLED:-false}" | tr '[:upper:]' '[:lower:]')
+case "$tls_enabled" in
+    true|1|yes|on)
+        python3 -c "import json, ssl, urllib.request; state=json.load(urllib.request.urlopen('https://127.0.0.1:$web_port/api/health', context=ssl._create_unverified_context(), timeout=3)); assert state['ok'], state" || fail "HTTPS ingress health check failed"
+        ;;
+    false|0|no|off)
+        wget -qO- "http://127.0.0.1:$web_port/api/health" >/dev/null || fail "HTTP ingress health check failed"
+        ;;
+    *) fail "WEB_TLS_ENABLED must be true or false" ;;
+esac
 wget -qO- "http://127.0.0.1:$mympd_port/" >/dev/null || fail "internal myMPD web check failed"
 printf 'ping\nclose\n' | nc -w 2 127.0.0.1 6600 | grep -q '^OK' || fail "MPD command socket failed"
 /app/unified/gateway-integration-test.py || fail "authenticated myMPD gateway integration failed"

@@ -1,5 +1,4 @@
 @media (max-width: 900.98px) {
-  :root { --sidebar: 0px; --player-height: 0px; }
   .device-shell { padding: 0; }
   .device-shell .workspace { width: 100%; padding: 20px 14px 34px; }
   .console-header { margin-bottom: 16px; }

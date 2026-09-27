@@ -12,20 +12,15 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import app as app_module
 from app import (
-    ControlError, Handler, clamp_int,
-    login_allowed, normalized_snapcast_state, parse_mpd,
-    mympd_art_url, player_state, proxy_mympd_rpc, reconcile_main_group, seek_player, set_player_volume,
+    ControlError, Handler, clamp_int, combined_state,
+    login_allowed, normalized_snapcast_state,
+    mympd_art_url, proxy_mympd_rpc, reconcile_main_group, validate_mympd_params,
     record_login_failure, set_client_name,
-    set_client_active, set_zone_volume, song_payload, source_descriptor, stop_all_sources,
+    set_client_active, source_descriptor, stop_all_sources,
 )
 
 
 class ControlHelpersTest(unittest.TestCase):
-    def test_parse_mpd_and_song_fallbacks(self):
-        self.assertEqual(parse_mpd(["Artist: A", "state: play"]), {"Artist": "A", "state": "play"})
-        self.assertEqual(song_payload({"file": "Artist/Album/track.flac"})["title"], "track")
-        self.assertEqual(song_payload({"file": "track.flac"})["artist"], "未知歌手")
-
     def test_clamp_int_validates_bounds(self):
         self.assertEqual(clamp_int("25", 0, 100, "volume"), 25)
         with self.assertRaises(ControlError):
@@ -35,39 +30,25 @@ class ControlHelpersTest(unittest.TestCase):
         self.assertEqual(source_descriptor({"id": "Airplay"})["sourceType"], "airplay")
         self.assertEqual(source_descriptor({"id": "DLNA"})["sourceType"], "mpd")
 
-    def test_player_state_classifies_dlna_and_seekability(self):
-        responses = [
-            ["state: play", "elapsed: 12.5", "duration: 180", "audio: 48000:16:2"],
-            ["file: https://cdn.example/video.mp4", "Title: 视频", "duration: 180"],
-        ]
-        with patch("app.mpd_command", side_effect=responses):
-            result = player_state()
-        self.assertEqual(result["origin"], "dlna")
-        self.assertTrue(result["seekable"])
-        self.assertFalse(result["live"])
-
-    def test_seek_player_uses_bounded_numeric_position(self):
-        current = {"seekable": True, "duration": 120, "state": "play"}
-        after = {**current, "elapsed": 120}
-        with patch("app.player_state", side_effect=[current, after]), patch("app.mpd_command", return_value=[]) as mpd:
-            result = seek_player(999)
-        mpd.assert_called_once_with("seekcur 120.000")
-        self.assertEqual(result["elapsed"], 120)
-
-    def test_seek_player_rejects_live_stream(self):
-        with patch("app.player_state", return_value={"seekable": False, "duration": 0}):
-            with self.assertRaises(ControlError):
-                seek_player(30)
-
-    def test_player_volume_controls_mpd_mixer(self):
-        with patch("app.mpd_command", side_effect=[[], ["state: stop", "volume: 42"], []]) as mpd:
-            result = set_player_volume(42)
-        self.assertEqual(mpd.call_args_list[0].args, ("setvol 42",))
-        self.assertEqual(result["volume"], 42)
-
     def test_mympd_rpc_rejects_methods_outside_allowlist(self):
         with self.assertRaisesRegex(ControlError, "允许列表"):
             proxy_mympd_rpc({"method": "MYMPD_API_SCRIPT_EXECUTE", "params": {}})
+
+    def test_mympd_rpc_rejects_oversized_uri_list(self):
+        with self.assertRaisesRegex(ControlError, "URI数量"):
+            validate_mympd_params("MYMPD_API_QUEUE_REPLACE_URIS", {"uris": ["track.flac"] * 201})
+        with self.assertRaisesRegex(ControlError, "协议"):
+            validate_mympd_params("MYMPD_API_QUEUE_APPEND_URIS", {"uris": ["file:///etc/passwd"]})
+
+    def test_mympd_rpc_rejects_invalid_playlist_and_id_lists(self):
+        with self.assertRaisesRegex(ControlError, "歌单名称"):
+            validate_mympd_params("MYMPD_API_PLAYLIST_RENAME", {"plist": "ok", "newName": "x" * 201})
+        with self.assertRaisesRegex(ControlError, "songIds"):
+            validate_mympd_params("MYMPD_API_QUEUE_RM_IDS", {"songIds": [1, -2]})
+
+    def test_mympd_rpc_rejects_oversized_search_expression(self):
+        with self.assertRaisesRegex(ControlError, "搜索表达式"):
+            validate_mympd_params("MYMPD_API_DATABASE_SEARCH", {"expression": "x" * 2049})
 
     def test_mympd_art_proxy_only_accepts_albumart_paths(self):
         self.assertIn("/albumart-large?", mympd_art_url("size=large&uri=music%2Fsong.flac"))
@@ -93,33 +74,6 @@ class ControlHelpersTest(unittest.TestCase):
         self.assertEqual(state["mainGroupId"], "g1")
         self.assertEqual(state["mainGroup"]["id"], "g1")
 
-    def test_zone_volume_scales_connected_clients_proportionally(self):
-        zones = {"groups": [{"id": "g1", "clients": [
-            {"id": "a", "connected": True, "volume": 80},
-            {"id": "b", "connected": True, "volume": 40},
-            {"id": "offline", "connected": False, "volume": 60},
-        ]}]}
-        with patch("app.normalized_snapcast_state", return_value=zones), patch("app.snap_rpc", return_value={}) as rpc:
-            set_zone_volume("g1", 50)
-        self.assertEqual([call.args[1]["volume"]["percent"] for call in rpc.call_args_list], [50, 25])
-
-    def test_zone_volume_from_silence_sets_requested_level(self):
-        zones = {"groups": [{"id": "g1", "clients": [
-            {"id": "a", "connected": True, "volume": 0}, {"id": "b", "connected": True, "volume": 0},
-        ]}]}
-        with patch("app.normalized_snapcast_state", return_value=zones), patch("app.snap_rpc", return_value={}) as rpc:
-            set_zone_volume("g1", 30)
-        self.assertEqual([call.args[1]["volume"]["percent"] for call in rpc.call_args_list], [30, 30])
-
-    def test_zone_volume_skips_inactive_clients(self):
-        zones = {"groups": [{"id": "g1", "clients": [
-            {"id": "active", "connected": True, "active": True, "volume": 80},
-            {"id": "inactive", "connected": True, "active": False, "volume": 40},
-        ]}]}
-        with patch("app.normalized_snapcast_state", return_value=zones), patch("app.snap_rpc", return_value={}) as rpc:
-            set_zone_volume("g1", 50)
-        self.assertEqual([call.args[1]["id"] for call in rpc.call_args_list], ["active"])
-
     def test_client_activation_preserves_volume(self):
         before = self.snap_state([{"id": "g1", "clients": [{"id": "c1", "volume": 37, "muted": True}]}])
         after = self.snap_state([{"id": "g1", "clients": [{"id": "c1", "volume": 37, "muted": False}]}])
@@ -140,6 +94,19 @@ class ControlHelpersTest(unittest.TestCase):
         self.assertIn(("Group.SetClients", {"id": "g1", "clients": ["a", "b", "c"]}), calls)
         self.assertIn(("Group.SetStream", {"id": "g1", "stream_id": "Default"}), calls)
         self.assertEqual(result["groups"][0]["name"], "主播放组")
+
+    def test_reconcile_restores_default_without_topology_change(self):
+        state = {"groups": [{"id": "g1", "name": app_module.MAIN_GROUP_NAME, "streamId": "Airplay", "clients": [{"id": "a"}]}], "streams": [], "mainGroupId": "g1"}
+        with patch("app.normalized_snapcast_state", side_effect=[state, state]), patch("app.snap_rpc", return_value={}) as rpc:
+            reconcile_main_group()
+        rpc.assert_called_once_with("Group.SetStream", {"id": "g1", "stream_id": "Default"})
+
+    def test_api_state_contains_no_duplicate_player_state(self):
+        snapcast = {"streams": [{"id": "Airplay", "status": "playing"}], "groups": [], "mainGroup": None}
+        with patch("app.normalized_snapcast_state", return_value=snapcast), patch("app.health_snapshot", return_value={"ok": True}):
+            state = combined_state()
+        self.assertNotIn("player", state)
+        self.assertEqual(state["sources"][0]["id"], "Airplay")
 
     @staticmethod
     def snap_state(groups, streams=None):
@@ -232,6 +199,10 @@ class AuthHttpTest(unittest.TestCase):
         with self.assertRaises(urllib.error.HTTPError) as retired:
             self.request("/api/player/bootstrap", opener=self.opener)
         self.assertEqual(retired.exception.code, 404)
+        for path in ("/api/snapcast/stream", "/api/snapcast/all-stream", "/api/snapcast/group-volume", "/api/player/seek", "/api/player/volume"):
+            with self.assertRaises(urllib.error.HTTPError) as retired:
+                self.request(path, {}, self.opener)
+            self.assertEqual(retired.exception.code, 404)
 
 
 class ProductionConfigTest(unittest.TestCase):
@@ -253,6 +224,23 @@ class ProductionConfigTest(unittest.TestCase):
         self.assertNotIn("location /player/", config)
         self.assertNotIn("__MYMPD_PORT__", config)
         self.assertNotIn("proxy_set_header Upgrade", config)
+
+    def test_runtime_defaults_and_tls_health_contract(self):
+        project = Path(__file__).parents[1]
+        env_example = (project / ".env.example").read_text(encoding="utf-8")
+        compose = (project / "docker-compose.yml").read_text(encoding="utf-8")
+        entrypoint = (project / "unified" / "entrypoint.sh").read_text(encoding="utf-8")
+        healthcheck = (project / "unified" / "healthcheck.sh").read_text(encoding="utf-8")
+        smoke = (project / "unified" / "smoke-test.sh").read_text(encoding="utf-8")
+        workflow = (project / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+        self.assertIn("PGID=1001", env_example)
+        self.assertIn("PGID: ${PGID:-1001}", compose)
+        self.assertIn("pgid=${PGID:-1001}", entrypoint)
+        self.assertIn("CONTROL_INTERNAL_PORT", healthcheck)
+        self.assertNotIn("$web_port/api/health", healthcheck)
+        self.assertIn("https://127.0.0.1:$web_port/api/health", smoke)
+        self.assertIn("docker-smoke-http:", workflow)
+        self.assertIn("docker-smoke-https:", workflow)
 
     def test_bundled_radio_playlist_is_well_formed_and_deduplicated(self):
         playlist = Path(__file__).parents[1] / "unified" / "radio-stations.m3u"
@@ -374,6 +362,10 @@ class ProductionConfigTest(unittest.TestCase):
         self.assertIn('repeat(5, minmax(0, 1fr))', styles)
         self.assertIn('class="lightfield-player embedded-player active"', index)
         self.assertIn('class="player-actions"', index)
+        self.assertIn('id="activeSourceBanner"', index)
+        self.assertIn('aria-label="系统状态"', index)
+        self.assertIn('maxlength="64"', (static / "js" / "zones.js").read_text(encoding="utf-8"))
+        self.assertIn("syncActiveSource", player)
         self.assertIn(".embedded-player .lightfield-toolbar { display: none; }", styles)
         self.assertIn("height: calc(100dvh - var(--header-space))", styles)
         self.assertIn('const API_URL = "/api/player/rpc"', adapter)

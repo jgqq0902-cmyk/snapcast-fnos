@@ -2,7 +2,7 @@ import { post, request } from "./js/api.js";
 import { state } from "./js/store.js";
 import { $, $$, closeDialog, openDialog, toast } from "./js/ui.js";
 import { renderZones } from "./js/zones.js?v=20260925-auditv3";
-import { activatePlayer, resetPlayer } from "./js/player.js?v=20260925-compact";
+import { activatePlayer, resetPlayer, syncActiveSource } from "./js/player.js?v=20260927-v4";
 
 let pollTimer;
 let bootstrapped = false;
@@ -44,7 +44,7 @@ function clearPrivateState(message = "登录状态已失效，请重新登录。
   state.zones = [];
   state.mainGroup = null;
   state.sources = [];
-  state.player = { state: "stop", song: {}, capabilities: {} };
+  syncActiveSource([]);
   renderZones(true);
   $("#deviceCount").textContent = "0";
   $("#devicePanelHost").innerHTML = `<section class="state-panel"><svg class="state-mark" aria-hidden="true"><use href="/icons.svg#icon-speaker"/></svg><h2>需要重新登录</h2><p>${message}</p></section>`;
@@ -76,9 +76,8 @@ async function refreshState() {
   if (!bootstrapped) return;
   try {
     const data = await request("/api/state");
-    state.player = data.player || state.player;
-    state.playerSyncedAt = performance.now();
     state.sources = data.sources || data.snapcast?.streams || [];
+    syncActiveSource(state.sources);
     state.zones = data.zones || data.snapcast?.groups || [];
     state.mainGroup = data.mainGroup || data.snapcast?.mainGroup || null;
     state.system = { ...state.system, ...(data.system || {}) };

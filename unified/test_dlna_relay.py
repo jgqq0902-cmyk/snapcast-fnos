@@ -74,6 +74,22 @@ class DlnaRelayTest(unittest.TestCase):
             urllib.request.urlopen(f"http://127.0.0.1:{self.relay.server_port}/stream/missing", timeout=2)
         error.exception.close()
 
+    def test_handler_returns_403_for_blocked_target(self):
+        token = dlna_relay.REGISTRY.register("http://blocked.example/audio").rsplit("/", 1)[1]
+        relay_url = f"http://127.0.0.1:{self.relay.server_port}/stream/{token}"
+        with patch.object(dlna_relay, "open_upstream", side_effect=dlna_relay.RelayTargetError("loopback target is blocked")), self.assertRaises(urllib.error.HTTPError) as error:
+            urllib.request.urlopen(relay_url, timeout=2)
+        self.assertEqual(error.exception.code, 403)
+        error.exception.close()
+
+    def test_handler_returns_416_for_invalid_range(self):
+        token = dlna_relay.REGISTRY.register("https://media.example/audio").rsplit("/", 1)[1]
+        request = urllib.request.Request(f"http://127.0.0.1:{self.relay.server_port}/stream/{token}", headers={"Range": "bytes=1-2"})
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            urllib.request.urlopen(request, timeout=2)
+        self.assertEqual(error.exception.code, 416)
+        error.exception.close()
+
     @staticmethod
     def resolved(address):
         family = socket.AF_INET6 if ":" in address else socket.AF_INET

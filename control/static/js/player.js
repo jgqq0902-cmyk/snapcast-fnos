@@ -2,6 +2,21 @@ import * as mpd from "./mympd-adapter.js?v=20260925-compact";
 import { $, $$, askConfirm, esc, icon, toast } from "./ui.js";
 
 let initialized = false, activeView = "now", requestedView, model, refreshTimer, searchTimer, disconnectSocket;
+let externalSourceActive = false;
+
+export function syncActiveSource(sources = []) {
+  externalSourceActive = sources.some(source => String(source.id).toLowerCase() === "airplay" && source.status === "playing");
+  const banner = $("#activeSourceBanner");
+  if (!banner) return;
+  banner.hidden = !externalSourceActive;
+  $("#playerNow").classList.toggle("has-external-source", externalSourceActive);
+  $("#playerSeek").disabled = externalSourceActive;
+  $$('[data-player-action]').forEach(button => { button.disabled = externalSourceActive; });
+  const volume = document.querySelector(".player-volume-popover");
+  volume.inert = externalSourceActive;
+  volume.toggleAttribute("aria-disabled", externalSourceActive);
+  if (externalSourceActive) volume.removeAttribute("open");
+}
 
 export function initPlayer() {
   if (initialized) return;
