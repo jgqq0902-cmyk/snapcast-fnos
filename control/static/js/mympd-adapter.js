@@ -5,6 +5,10 @@ const playlistFields = ["Pos", "Title", "Artist", "Album", "Duration"];
 let requestId = 1000;
 const radioNames = new Map();
 
+function mpdBoolean(value) {
+  return value === true || value === 1 || value === "1";
+}
+
 export class MyMpdError extends Error {
   constructor(message, payload = null) { super(message); this.payload = payload; }
 }
@@ -48,7 +52,7 @@ export function normalizePlayer(status = {}, song = {}) {
   return {
     state: status.state || "stop", volume: Number(status.volume ?? 0), elapsed: Number(status.elapsedTime ?? status.elapsed ?? 0),
     duration: Number(status.totalTime ?? song.Duration ?? song.duration ?? 0), currentSongId: Number(status.currentSongId ?? song.id ?? -1),
-    random: Boolean(status.random), repeat: Boolean(status.repeat), single: String(status.single ?? "0"),
+    random: mpdBoolean(status.random), repeat: mpdBoolean(status.repeat), single: mpdBoolean(status.single) ? "1" : "0",
     song: { uri, title: radioNames.get(normalizeUri(uri)) || readableTitle(song, uri), artist: song.Artist || song.AlbumArtist || "", album: song.Album || "" },
     cover: uri ? `/api/player/art?size=large&uri=${encodeURIComponent(uri)}` : "/art/album-placeholder.svg",
   };

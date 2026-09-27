@@ -14,8 +14,8 @@ import app as app_module
 from app import (
     ControlError, Handler, clamp_int, combined_state,
     login_allowed, normalized_snapcast_state,
-    mympd_art_url, proxy_mympd_rpc, reconcile_main_group, validate_mympd_params,
-    record_login_failure, set_client_name,
+    mpd_playback_options, mympd_art_url, proxy_mympd_rpc, reconcile_main_group, validate_mympd_params,
+    player_event_revision, publish_player_event, record_login_failure, set_client_name,
     set_client_active, source_descriptor, stop_all_sources,
 )
 
@@ -36,6 +36,26 @@ class ControlHelpersTest(unittest.TestCase):
         self.assertEqual(clamp_int("25", 0, 100, "volume"), 25)
         with self.assertRaises(ControlError):
             clamp_int(101, 0, 100, "volume")
+
+    def test_player_event_revision_advances(self):
+        before = player_event_revision()
+        self.assertEqual(publish_player_event(), before + 1)
+        self.assertEqual(player_event_revision(), before + 1)
+
+    def test_mpd_playback_options_extracts_loop_state(self):
+        self.assertEqual(
+            mpd_playback_options(["volume: 10", "repeat: 1", "random: 0", "single: 1"]),
+            {"repeat": "1", "random": "0", "single": "1"},
+        )
+
+    def test_player_state_is_enriched_with_mpd_options(self):
+        response = self.RpcResponse()
+        response.read = lambda _size: b'{"jsonrpc":"2.0","id":1,"result":{"state":"play"}}'
+        with patch("app.urllib.request.urlopen", return_value=response), patch(
+            "app.mpd_command", return_value=["repeat: 1", "random: 0", "single: 0"]
+        ):
+            result = proxy_mympd_rpc({"method": "MYMPD_API_PLAYER_STATE", "params": {}})["result"]
+        self.assertEqual((result["repeat"], result["random"], result["single"]), ("1", "0", "0"))
 
     def test_source_descriptor_exposes_source_type(self):
         self.assertEqual(source_descriptor({"id": "Airplay"})["sourceType"], "airplay")
@@ -407,6 +427,10 @@ class ProductionConfigTest(unittest.TestCase):
         self.assertIn("MYMPD_API_PLAYER_OPTIONS_SET", adapter)
         self.assertIn('id="playerModeButton"', index)
         self.assertIn("cyclePlaybackMode", player)
+        self.assertIn('value === true || value === 1 || value === "1"', adapter)
+        self.assertNotIn("播放器已更新", player)
+        for icon in ('"queue"', '"repeat"', '"repeat-one"', '"shuffle"'):
+            self.assertIn(icon, player)
         self.assertNotIn('if (!await askConfirm("生成随机播放队列？"', player)
         self.assertIn("queueItemsSignature", player)
         self.assertIn("row.offsetTop - row.offsetHeight * 3", player)

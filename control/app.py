@@ -55,6 +55,8 @@ SESSIONS: dict[str, float] = {}
 LOGIN_ATTEMPTS: dict[str, deque[float]] = defaultdict(deque)
 HEALTH_LOCK = threading.Lock()
 HEALTH_STATE: dict[str, Any] = {"ok": False, "updatedAt": 0, "components": {}}
+PLAYER_EVENT_CONDITION = threading.Condition()
+PLAYER_EVENT_REVISION = 0
 MAIN_GROUP_NAME = os.environ.get("SNAPCAST_MAIN_GROUP_NAME", "主播放组").strip() or "主播放组"
 MYMPD_ALLOWED_METHODS = frozenset({
     "MYMPD_API_PLAYER_STATE", "MYMPD_API_PLAYER_CURRENT_SONG", "MYMPD_API_PLAYER_PLAY",
@@ -67,6 +69,16 @@ MYMPD_ALLOWED_METHODS = frozenset({
     "MYMPD_API_PLAYLIST_CONTENT_LIST", "MYMPD_API_PLAYLIST_CONTENT_APPEND_URIS",
     "MYMPD_API_PLAYLIST_RENAME", "MYMPD_API_PLAYLIST_RM", "MYMPD_API_PLAYLIST_CONTENT_RM_POSITIONS",
     "MYMPD_API_PLAYLIST_CONTENT_MOVE_POSITION", "MYMPD_API_WEBRADIO_FAVORITE_SEARCH",
+})
+MYMPD_MUTATING_METHODS = frozenset({
+    "MYMPD_API_PLAYER_PLAY", "MYMPD_API_PLAYER_PAUSE", "MYMPD_API_PLAYER_STOP",
+    "MYMPD_API_PLAYER_NEXT", "MYMPD_API_PLAYER_PREV", "MYMPD_API_PLAYER_SEEK_CURRENT",
+    "MYMPD_API_PLAYER_VOLUME_SET", "MYMPD_API_PLAYER_PLAY_SONG", "MYMPD_API_PLAYER_OPTIONS_SET",
+    "MYMPD_API_QUEUE_REPLACE_URIS", "MYMPD_API_QUEUE_APPEND_URIS",
+    "MYMPD_API_QUEUE_REPLACE_PLAYLISTS", "MYMPD_API_QUEUE_RM_IDS", "MYMPD_API_QUEUE_CLEAR",
+    "MYMPD_API_QUEUE_ADD_RANDOM", "MYMPD_API_PLAYLIST_CONTENT_APPEND_URIS",
+    "MYMPD_API_PLAYLIST_RENAME", "MYMPD_API_PLAYLIST_RM",
+    "MYMPD_API_PLAYLIST_CONTENT_RM_POSITIONS", "MYMPD_API_PLAYLIST_CONTENT_MOVE_POSITION",
 })
 MYMPD_URI_METHODS = frozenset({
     "MYMPD_API_QUEUE_REPLACE_URIS", "MYMPD_API_QUEUE_APPEND_URIS",
@@ -224,6 +236,15 @@ def mpd_command(command: str, timeout: float = 3) -> list[str]:
             return _read_mpd_response(connection)
     except (AttributeError, FileNotFoundError, ConnectionRefusedError, socket.timeout, OSError) as exc:
         raise ControlError(f"播放器暂不可用：{exc}") from exc
+
+
+def mpd_playback_options(lines: list[str]) -> dict[str, str]:
+    values = {}
+    for line in lines:
+        key, separator, value = line.partition(": ")
+        if separator and key in {"repeat", "random", "single"}:
+            values[key] = value
+    return values
 
 
 def source_type(stream_id: Any) -> str:
@@ -422,6 +443,19 @@ def health_snapshot() -> dict[str, Any]:
         return dict(HEALTH_STATE)
 
 
+def player_event_revision() -> int:
+    with PLAYER_EVENT_CONDITION:
+        return PLAYER_EVENT_REVISION
+
+
+def publish_player_event() -> int:
+    global PLAYER_EVENT_REVISION
+    with PLAYER_EVENT_CONDITION:
+        PLAYER_EVENT_REVISION += 1
+        PLAYER_EVENT_CONDITION.notify_all()
+        return PLAYER_EVENT_REVISION
+
+
 def _bounded_text(value: Any, label: str, maximum: int, *, allow_empty: bool = False) -> str:
     if not isinstance(value, str):
         raise ControlError(f"{label}格式无效")
@@ -505,9 +539,15 @@ def proxy_mympd_rpc(payload: dict[str, Any]) -> dict[str, Any]:
     if len(raw) > 2 * 1024 * 1024:
         raise ControlError("播放器响应过大")
     try:
-        return json.loads(raw)
+        payload = json.loads(raw)
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ControlError("播放器返回了无效响应") from exc
+    if method == "MYMPD_API_PLAYER_STATE" and isinstance(payload.get("result"), dict):
+        try:
+            payload["result"].update(mpd_playback_options(mpd_command("status")))
+        except ControlError:
+            pass
+    return payload
 
 
 def mympd_art_url(query: str) -> str:
@@ -618,11 +658,17 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Connection", "keep-alive")
             self.send_header("X-Content-Type-Options", "nosniff")
             self.end_headers()
+            revision = player_event_revision()
             try:
-                for sequence in range(60):
-                    self.wfile.write(f"event: update\ndata: {{\"sequence\":{sequence}}}\n\n".encode())
+                for _ in range(60):
+                    with PLAYER_EVENT_CONDITION:
+                        PLAYER_EVENT_CONDITION.wait_for(
+                            lambda: PLAYER_EVENT_REVISION != revision,
+                            timeout=2,
+                        )
+                        revision = PLAYER_EVENT_REVISION
+                    self.wfile.write(f"event: update\ndata: {{\"revision\":{revision}}}\n\n".encode())
                     self.wfile.flush()
-                    time.sleep(2)
             except (BrokenPipeError, ConnectionResetError):
                 pass
             return
@@ -685,7 +731,10 @@ class Handler(BaseHTTPRequestHandler):
         try:
             body = self.read_json()
             if path == "/api/player/rpc":
-                self.json_response(proxy_mympd_rpc(body)); return
+                response = proxy_mympd_rpc(body)
+                if body.get("method") in MYMPD_MUTATING_METHODS and "error" not in response:
+                    publish_player_event()
+                self.json_response(response); return
             if path == "/api/snapcast/volume":
                 result = snap_rpc("Client.SetVolume", {"id": str(body.get("clientId", "")), "volume": {"muted": bool(body.get("muted", False)), "percent": clamp_int(body.get("percent"), 0, 100, "音量")}})
             elif path == "/api/snapcast/latency":

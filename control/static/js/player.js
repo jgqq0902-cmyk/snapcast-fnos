@@ -1,4 +1,4 @@
-import * as mpd from "./mympd-adapter.js?v=20260927-mobile";
+import * as mpd from "./mympd-adapter.js?v=20260928-sync";
 import { $, $$, askConfirm, esc, icon, toast } from "./ui.js";
 
 let initialized = false, activeView = "now", requestedView, model, refreshTimer, searchTimer, disconnectSocket;
@@ -288,7 +288,7 @@ async function cyclePlaybackMode() {
   };
   await run(() => mpd.actions.playbackMode(options[next]));
 }
-async function run(fn, announce = true) { try { await fn(); if (announce) toast("播放器已更新"); await refreshPlayer(); return true; } catch (error) { toast(error.message, true, 5000); return false; } }
+async function run(fn) { try { await fn(); await refreshPlayer(); return true; } catch (error) { toast(error.message, true, 5000); return false; } }
 function scheduleRefresh() { clearTimeout(scheduleRefresh.timer); scheduleRefresh.timer = setTimeout(async () => { await refreshPlayer(); if (activeView === "queue") await refreshQueue(); }, 180); }
 function startClock() { clearInterval(refreshTimer); refreshTimer = setInterval(() => { if (!model) return; if (model.state === "play") model.elapsed = Math.min(model.duration || Infinity, model.elapsed + .25); $("#playerSeek").value = model.elapsed; $("#playerElapsed").textContent = time(model.elapsed); }, 250); }
 function setEngineState(ok) { const node = $("#playerEngineState"); node.classList.toggle("online", ok); node.innerHTML = `<i></i><span>${ok ? "音乐引擎在线" : "正在重连"}</span>`; }
