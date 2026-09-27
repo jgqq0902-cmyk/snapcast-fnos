@@ -13,6 +13,7 @@ export function syncActiveSource(sources = []) {
   $("#playerNow").classList.toggle("has-external-source", externalSourceActive);
   $("#playerSeek").disabled = externalSourceActive;
   $$('[data-player-action]').forEach(button => { button.disabled = externalSourceActive; });
+  $("#playerModeButton").disabled = externalSourceActive;
   const volume = document.querySelector(".player-volume-popover");
   volume.inert = externalSourceActive;
   volume.toggleAttribute("aria-disabled", externalSourceActive);
@@ -25,6 +26,7 @@ export function initPlayer() {
   activeView = requestedView || "now";
   $$('[data-player-view]').forEach(button => button.onclick = () => openView(button.dataset.playerView));
   $$('[data-player-action]').forEach(button => button.onclick = () => playerAction(button.dataset.playerAction));
+  $("#playerModeButton").onclick = cyclePlaybackMode;
   $("#playerSeek").onchange = event => run(() => mpd.actions.seek(Number(event.target.value)));
   $("#playerVolume").oninput = event => { $("#playerVolumeValue").value = event.target.value; };
   $("#playerVolume").onchange = event => run(() => mpd.actions.volume(Number(event.target.value)), false);
@@ -58,6 +60,7 @@ async function refreshPlayer() {
     $("#playerDuration").textContent = model.duration ? time(model.duration) : "直播";
     $("#playerVolume").value = model.volume; $("#playerVolumeValue").value = model.volume;
     $("#playerToggleIcon").setAttribute("href", model.state === "play" ? "/icons.svg#icon-pause" : "/icons.svg#icon-play-filled");
+    syncPlaybackMode();
     document.querySelector(".lightfield-player").classList.toggle("is-playing", model.state === "play");
     extractAccent($("#playerCover"));
     setEngineState(true);
@@ -253,6 +256,38 @@ async function renderRadios(query) {
 
 function addPlayAll(value, playlist) { const head = $(".player-content-head"); head.querySelector(".play-all")?.remove(); const button = document.createElement("button"); button.className = "play-all"; button.innerHTML = `${icon("play-filled")}播放全部`; button.onclick = () => run(() => playlist ? mpd.actions.replacePlaylist(value) : mpd.actions.replaceUris(value)); head.append(button); }
 async function playerAction(action) { const fn = action === "toggle" ? (model?.state === "play" ? mpd.actions.pause : mpd.actions.play) : mpd.actions[action]; if (fn) await run(fn); }
+function currentPlaybackMode() {
+  if (model?.random) return "shuffle";
+  if (model?.single === "1") return "repeat-one";
+  if (model?.repeat) return "repeat-all";
+  return "order";
+}
+function syncPlaybackMode() {
+  const modes = {
+    order: ["顺序播放", "queue"],
+    "repeat-all": ["列表循环", "repeat"],
+    "repeat-one": ["单曲循环", "repeat-one"],
+    shuffle: ["随机循环", "shuffle"],
+  };
+  const mode = currentPlaybackMode();
+  const [label, iconName] = modes[mode];
+  const button = $("#playerModeButton");
+  button.dataset.mode = mode;
+  button.setAttribute("aria-label", `${label}，点击切换`);
+  button.title = label;
+  $("#playerModeIcon").setAttribute("href", `/icons.svg#icon-${iconName}`);
+}
+async function cyclePlaybackMode() {
+  const order = ["order", "repeat-all", "repeat-one", "shuffle"];
+  const next = order[(order.indexOf(currentPlaybackMode()) + 1) % order.length];
+  const options = {
+    order: { repeat: false, random: false, single: "0" },
+    "repeat-all": { repeat: true, random: false, single: "0" },
+    "repeat-one": { repeat: true, random: false, single: "1" },
+    shuffle: { repeat: true, random: true, single: "0" },
+  };
+  await run(() => mpd.actions.playbackMode(options[next]));
+}
 async function run(fn, announce = true) { try { await fn(); if (announce) toast("播放器已更新"); await refreshPlayer(); return true; } catch (error) { toast(error.message, true, 5000); return false; } }
 function scheduleRefresh() { clearTimeout(scheduleRefresh.timer); scheduleRefresh.timer = setTimeout(async () => { await refreshPlayer(); if (activeView === "queue") await refreshQueue(); }, 180); }
 function startClock() { clearInterval(refreshTimer); refreshTimer = setInterval(() => { if (!model) return; if (model.state === "play") model.elapsed = Math.min(model.duration || Infinity, model.elapsed + .25); $("#playerSeek").value = model.elapsed; $("#playerElapsed").textContent = time(model.elapsed); }, 250); }

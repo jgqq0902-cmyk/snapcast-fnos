@@ -60,7 +60,7 @@ MYMPD_ALLOWED_METHODS = frozenset({
     "MYMPD_API_PLAYER_STATE", "MYMPD_API_PLAYER_CURRENT_SONG", "MYMPD_API_PLAYER_PLAY",
     "MYMPD_API_PLAYER_PAUSE", "MYMPD_API_PLAYER_STOP", "MYMPD_API_PLAYER_NEXT",
     "MYMPD_API_PLAYER_PREV", "MYMPD_API_PLAYER_SEEK_CURRENT", "MYMPD_API_PLAYER_VOLUME_SET",
-    "MYMPD_API_PLAYER_PLAY_SONG", "MYMPD_API_DATABASE_ALBUM_LIST", "MYMPD_API_DATABASE_SEARCH",
+    "MYMPD_API_PLAYER_PLAY_SONG", "MYMPD_API_PLAYER_OPTIONS_SET", "MYMPD_API_DATABASE_ALBUM_LIST", "MYMPD_API_DATABASE_SEARCH",
     "MYMPD_API_DATABASE_ALBUM_DETAIL", "MYMPD_API_QUEUE_SEARCH", "MYMPD_API_QUEUE_REPLACE_URIS",
     "MYMPD_API_QUEUE_APPEND_URIS", "MYMPD_API_QUEUE_REPLACE_PLAYLISTS", "MYMPD_API_QUEUE_RM_IDS",
     "MYMPD_API_QUEUE_CLEAR", "MYMPD_API_QUEUE_ADD_RANDOM", "MYMPD_API_PLAYLIST_LIST",
@@ -473,6 +473,16 @@ def validate_mympd_params(method: str, params: Any) -> dict[str, Any]:
             for identifier in _bounded_list(params[key], key, MAX_RPC_LIST_ITEMS):
                 if isinstance(identifier, bool) or not isinstance(identifier, int) or identifier < 0:
                     raise ControlError(f"{key}包含无效编号")
+    if method == "MYMPD_API_PLAYER_OPTIONS_SET":
+        allowed = {"repeat", "random", "single", "consume"}
+        if not params or set(params) - allowed:
+            raise ControlError("播放模式参数无效")
+        for key in ("repeat", "random"):
+            if key in params and not isinstance(params[key], bool):
+                raise ControlError(f"{key}必须为布尔值")
+        for key in ("single", "consume"):
+            if key in params and params[key] not in {"0", "1", "oneshot"}:
+                raise ControlError(f"{key}模式无效")
     return params
 
 
@@ -481,7 +491,11 @@ def proxy_mympd_rpc(payload: dict[str, Any]) -> dict[str, Any]:
     if method not in MYMPD_ALLOWED_METHODS:
         raise ControlError("播放器方法不在允许列表中")
     params = validate_mympd_params(method, payload.get("params", {}))
-    request_body = json.dumps({"jsonrpc": "2.0", "id": payload.get("id", 1), "method": method, "params": params}, separators=(",", ":")).encode()
+    request_body = json.dumps(
+        {"jsonrpc": "2.0", "id": payload.get("id", 1), "method": method, "params": params},
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode()
     request = urllib.request.Request(MYMPD_RPC_URL, data=request_body, headers={"Content-Type": "application/json"})
     try:
         with urllib.request.urlopen(request, timeout=8) as response:

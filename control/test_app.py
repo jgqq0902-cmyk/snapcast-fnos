@@ -21,6 +21,17 @@ from app import (
 
 
 class ControlHelpersTest(unittest.TestCase):
+    class RpcResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        @staticmethod
+        def read(_size):
+            return b'{"jsonrpc":"2.0","id":1,"result":{}}'
+
     def test_clamp_int_validates_bounds(self):
         self.assertEqual(clamp_int("25", 0, 100, "volume"), 25)
         with self.assertRaises(ControlError):
@@ -49,6 +60,21 @@ class ControlHelpersTest(unittest.TestCase):
     def test_mympd_rpc_rejects_oversized_search_expression(self):
         with self.assertRaisesRegex(ControlError, "搜索表达式"):
             validate_mympd_params("MYMPD_API_DATABASE_SEARCH", {"expression": "x" * 2049})
+
+    def test_mympd_rpc_forwards_unicode_without_escapes(self):
+        with patch("app.urllib.request.urlopen", return_value=self.RpcResponse()) as urlopen:
+            proxy_mympd_rpc({"method": "MYMPD_API_PLAYLIST_CONTENT_LIST", "params": {"plist": "网络收音机"}})
+        body = urlopen.call_args.args[0].data
+        self.assertIn("网络收音机".encode(), body)
+        self.assertNotIn(b"\\u", body)
+
+    def test_mympd_playback_mode_validation(self):
+        self.assertEqual(
+            validate_mympd_params("MYMPD_API_PLAYER_OPTIONS_SET", {"repeat": True, "random": False, "single": "1"}),
+            {"repeat": True, "random": False, "single": "1"},
+        )
+        with self.assertRaisesRegex(ControlError, "repeat必须"):
+            validate_mympd_params("MYMPD_API_PLAYER_OPTIONS_SET", {"repeat": "yes"})
 
     def test_mympd_art_proxy_only_accepts_albumart_paths(self):
         self.assertIn("/albumart-large?", mympd_art_url("size=large&uri=music%2Fsong.flac"))
@@ -367,7 +393,7 @@ class ProductionConfigTest(unittest.TestCase):
         self.assertIn('maxlength="64"', (static / "js" / "zones.js").read_text(encoding="utf-8"))
         self.assertIn("syncActiveSource", player)
         self.assertIn(".embedded-player .lightfield-toolbar { display: none; }", styles)
-        self.assertIn("height: calc(100dvh - var(--header-space))", styles)
+        self.assertIn("height: calc(100svh - var(--header-space))", styles)
         self.assertIn('const API_URL = "/api/player/rpc"', adapter)
         self.assertIn('const EVENTS_URL = "/api/player/events"', adapter)
         self.assertIn("new EventSource", adapter)
@@ -377,6 +403,10 @@ class ProductionConfigTest(unittest.TestCase):
         self.assertIn("MYMPD_API_QUEUE_ADD_RANDOM", adapter)
         self.assertIn('quantity: 50', adapter)
         self.assertIn('play: false', adapter)
+        self.assertIn('const playlistFields = ["Pos", "Title", "Artist", "Album", "Duration"]', adapter)
+        self.assertIn("MYMPD_API_PLAYER_OPTIONS_SET", adapter)
+        self.assertIn('id="playerModeButton"', index)
+        self.assertIn("cyclePlaybackMode", player)
         self.assertNotIn('if (!await askConfirm("生成随机播放队列？"', player)
         self.assertIn("queueItemsSignature", player)
         self.assertIn("row.offsetTop - row.offsetHeight * 3", player)

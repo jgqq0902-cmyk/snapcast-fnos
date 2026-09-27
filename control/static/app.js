@@ -2,7 +2,7 @@ import { post, request } from "./js/api.js";
 import { state } from "./js/store.js";
 import { $, $$, closeDialog, openDialog, toast } from "./js/ui.js";
 import { renderZones } from "./js/zones.js?v=20260927-mobile";
-import { activatePlayer, resetPlayer, syncActiveSource } from "./js/player.js?v=20260927-mobile";
+import { activatePlayer, resetPlayer, syncActiveSource } from "./js/player.js?v=20260927-playmode";
 
 let pollTimer;
 let bootstrapped = false;

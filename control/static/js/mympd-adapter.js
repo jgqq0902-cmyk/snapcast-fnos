@@ -1,6 +1,7 @@
 const API_URL = "/api/player/rpc";
 const EVENTS_URL = "/api/player/events";
 const fields = ["Title", "Artist", "Album", "AlbumArtist", "Duration", "Track", "Name", "Pos"];
+const playlistFields = ["Pos", "Title", "Artist", "Album", "Duration"];
 let requestId = 1000;
 const radioNames = new Map();
 
@@ -47,7 +48,7 @@ export function normalizePlayer(status = {}, song = {}) {
   return {
     state: status.state || "stop", volume: Number(status.volume ?? 0), elapsed: Number(status.elapsedTime ?? status.elapsed ?? 0),
     duration: Number(status.totalTime ?? song.Duration ?? song.duration ?? 0), currentSongId: Number(status.currentSongId ?? song.id ?? -1),
-    random: Boolean(status.random), repeat: Boolean(status.repeat),
+    random: Boolean(status.random), repeat: Boolean(status.repeat), single: String(status.single ?? "0"),
     song: { uri, title: radioNames.get(normalizeUri(uri)) || readableTitle(song, uri), artist: song.Artist || song.AlbumArtist || "", album: song.Album || "" },
     cover: uri ? `/api/player/art?size=large&uri=${encodeURIComponent(uri)}` : "/art/album-placeholder.svg",
   };
@@ -79,7 +80,7 @@ export async function playlists() {
 }
 
 export async function playlistTracks(plist) {
-  const result = await call("MYMPD_API_PLAYLIST_CONTENT_LIST", { plist, offset: 0, limit: 1000, expression: "", fields });
+  const result = await call("MYMPD_API_PLAYLIST_CONTENT_LIST", { plist, offset: 0, limit: 1000, expression: "", fields: playlistFields });
   return result.data || [];
 }
 
@@ -96,6 +97,7 @@ export const actions = {
   next: () => call("MYMPD_API_PLAYER_NEXT"), prev: () => call("MYMPD_API_PLAYER_PREV"),
   seek: seconds => call("MYMPD_API_PLAYER_SEEK_CURRENT", { seek: Math.round(seconds), relative: false }),
   volume: volume => call("MYMPD_API_PLAYER_VOLUME_SET", { volume: Math.round(volume) }),
+  playbackMode: options => call("MYMPD_API_PLAYER_OPTIONS_SET", options),
   playSong: songId => call("MYMPD_API_PLAYER_PLAY_SONG", { songId: Number(songId) }),
   replaceUris: uris => call("MYMPD_API_QUEUE_REPLACE_URIS", { uris, play: true }),
   appendUris: uris => call("MYMPD_API_QUEUE_APPEND_URIS", { uris, play: false }),
