@@ -217,7 +217,7 @@ async function addSelectionToPlaylist(plist, boxes) {
 async function renderPlaylists() {
   $(".player-content-head .play-all")?.remove();
   const lists = await mpd.playlists();
-  $("#playerContent").innerHTML = lists.length ? `<div class="playlist-grid">${lists.map(item => { const name = item.Name || item.Playlist || item.uri || ""; return `<article class="playlist-card"><button data-plist="${esc(name)}"><span>${icon("playlist")}</span><div><b>${esc(name || "未命名歌单")}</b><small>打开歌单</small></div>${icon("chevron-right")}</button></article>`; }).join("")}</div>` : empty("还没有歌单", "从曲库搜索歌曲后可创建第一个歌单");
+  $("#playerContent").innerHTML = lists.length ? `<div class="playlist-grid">${lists.map(item => { const plist = item.uri || item.Name || ""; const name = item.Name || item.Playlist || plist; return `<article class="playlist-card"><button data-plist="${esc(plist)}"><span>${icon("playlist")}</span><div><b>${esc(name || "未命名歌单")}</b><small>打开歌单</small></div>${icon("chevron-right")}</button></article>`; }).join("")}</div>` : empty("还没有歌单", "从曲库搜索歌曲后可创建第一个歌单");
   $$('[data-plist]', $("#playerContent")).forEach(button => button.onclick = async () => {
     if (!button.dataset.plist) return toast("歌单名称无效", true);
     try { await showPlaylist(button.dataset.plist); } catch (error) { toast(error.message, true, 5000); }

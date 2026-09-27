@@ -387,6 +387,8 @@ class ProductionConfigTest(unittest.TestCase):
         self.assertIn("MYMPD_API_PLAYLIST_CONTENT_MOVE_POSITION", adapter)
         self.assertIn("installSelectionBar", player)
         self.assertIn("askPlaylistName", player)
+        self.assertIn("item.uri || item.Name", player)
+        self.assertIn("try { await showPlaylist", player)
         self.assertNotIn("renderLyrics", player)
         self.assertIn("extractAccent", player)
         self.assertIn("prefers-reduced-motion", styles)
