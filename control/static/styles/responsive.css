@@ -11,6 +11,8 @@
 }
 
 @media (max-width: 700px) {
+  button, a, summary, input[type="range"], .speaker-toggle { touch-action: pan-y; -webkit-tap-highlight-color: transparent; }
+  input[type="range"] { height: 36px; }
   .device-shell .workspace { padding: 16px 10px 26px; }
   .page-header { align-items: center; margin-bottom: 14px; }
   .header-actions { gap: 7px; }

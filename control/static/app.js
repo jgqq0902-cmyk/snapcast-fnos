@@ -1,8 +1,8 @@
 import { post, request } from "./js/api.js";
 import { state } from "./js/store.js";
 import { $, $$, closeDialog, openDialog, toast } from "./js/ui.js";
-import { renderZones } from "./js/zones.js?v=20260925-auditv3";
-import { activatePlayer, resetPlayer, syncActiveSource } from "./js/player.js?v=20260927-v4";
+import { renderZones } from "./js/zones.js?v=20260927-mobile";
+import { activatePlayer, resetPlayer, syncActiveSource } from "./js/player.js?v=20260927-mobile";
 
 let pollTimer;
 let bootstrapped = false;
@@ -109,6 +109,7 @@ async function refreshState() {
 }
 
 function initEvents() {
+  installMobileGestureGuard();
   document.addEventListener("auth-required", () => {
     if (!state.auth.authenticated && !bootstrapped) return openLogin();
     state.auth.authenticated = false;
@@ -129,6 +130,33 @@ function initEvents() {
   });
   $("#refreshRooms").onclick = refreshState;
   $("#logoutButton").onclick = logout;
+}
+
+function installMobileGestureGuard() {
+  let gesture = null;
+  document.addEventListener("pointerdown", event => {
+    if (event.pointerType !== "touch") return;
+    gesture = { x: event.clientX, y: event.clientY, moved: false, target: event.target };
+  }, { capture: true, passive: true });
+  document.addEventListener("pointermove", event => {
+    if (!gesture || event.pointerType !== "touch") return;
+    if (Math.hypot(event.clientX - gesture.x, event.clientY - gesture.y) > 10) gesture.moved = true;
+  }, { capture: true, passive: true });
+  document.addEventListener("pointerup", event => {
+    if (!gesture || event.pointerType !== "touch") return;
+    if (gesture.moved) {
+      const interactive = gesture.target.closest?.("button, a, summary, input[type=range], .speaker-toggle");
+      if (interactive) interactive.dataset.ignoreTouchClickUntil = String(performance.now() + 450);
+    }
+    gesture = null;
+  }, { capture: true, passive: true });
+  document.addEventListener("pointercancel", () => { gesture = null; }, { capture: true, passive: true });
+  document.addEventListener("click", event => {
+    const interactive = event.target.closest?.("button, a, summary, input[type=range], .speaker-toggle");
+    if (Number(interactive?.dataset.ignoreTouchClickUntil || 0) <= performance.now()) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  }, true);
 }
 
 async function logout() {

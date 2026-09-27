@@ -1,8 +1,9 @@
-import * as mpd from "./mympd-adapter.js?v=20260925-compact";
+import * as mpd from "./mympd-adapter.js?v=20260927-mobile";
 import { $, $$, askConfirm, esc, icon, toast } from "./ui.js";
 
 let initialized = false, activeView = "now", requestedView, model, refreshTimer, searchTimer, disconnectSocket;
 let externalSourceActive = false;
+let queueSignature = "", focusedQueueSongId = null;
 
 export function syncActiveSource(sources = []) {
   externalSourceActive = sources.some(source => String(source.id).toLowerCase() === "airplay" && source.status === "playing");
@@ -108,17 +109,49 @@ async function renderLibrary(query) {
 async function renderQueue() {
   const items = await mpd.queue();
   renderTracks(items, "队列为空", { queue: true });
+  queueSignature = queueItemsSignature(items);
   const button = document.createElement("button");
   button.className = "play-all random-queue";
   button.innerHTML = `${icon("shuffle")}随机 50 首`;
   button.onclick = async () => {
-    if (!await askConfirm("生成随机播放队列？", "将清空当前队列，由 myMPD 从 Database 随机加入 50 首并开始播放。")) return;
     button.disabled = true;
-    const cleared = await run(mpd.actions.clearQueue, false);
-    if (cleared) await run(mpd.actions.addRandomQueue);
-    await renderView("queue");
+    const updated = await run(async () => {
+      await mpd.actions.clearQueue();
+      await mpd.actions.addRandomQueue();
+    });
+    if (updated) await refreshQueue(true);
+    button.disabled = false;
   };
   $(".player-content-head").append(button);
+  syncQueueCurrent(true);
+}
+
+async function refreshQueue(focusCurrent = false) {
+  const items = await mpd.queue();
+  const signature = queueItemsSignature(items);
+  if (signature !== queueSignature) {
+    const scrollTop = $("#playerContent").scrollTop;
+    renderTracks(items, "队列为空", { queue: true });
+    queueSignature = signature;
+    if (!focusCurrent) $("#playerContent").scrollTop = scrollTop;
+  }
+  syncQueueCurrent(focusCurrent);
+}
+
+function queueItemsSignature(items) {
+  return JSON.stringify(items.map(item => [item.id, item.Pos, item.uri || item.Uri, item.Title || item.Name, item.Duration || item.duration]));
+}
+
+function syncQueueCurrent(forceFocus = false) {
+  const currentId = String(model?.currentSongId ?? "");
+  $$(".track-row[data-song-id]", $("#playerContent")).forEach(row => row.classList.toggle("is-current", row.dataset.songId === currentId));
+  const row = $(".track-row.is-current", $("#playerContent"));
+  if (!row || (!forceFocus && focusedQueueSongId === currentId)) return;
+  focusedQueueSongId = currentId;
+  requestAnimationFrame(() => {
+    const content = $("#playerContent");
+    content.scrollTo({ top: Math.max(0, row.offsetTop - row.offsetHeight * 3), behavior: "smooth" });
+  });
 }
 
 function renderTracks(items, title, options = {}) {
@@ -132,7 +165,7 @@ function renderTracks(items, title, options = {}) {
       : playlist
         ? `<span class="track-order"><button data-move-from="${position}" data-move-to="${Math.max(0, position - 1)}" aria-label="上移" ${index === 0 ? "disabled" : ""}>↑</button><button data-move-from="${position}" data-move-to="${position + 1}" aria-label="下移" ${index === items.length - 1 ? "disabled" : ""}>↓</button></span>`
         : `<button class="track-add" data-add-uri="${esc(uri)}" aria-label="加入队列">${icon("plus")}</button>`;
-    return `<article class="track-row${selectable ? " has-selection" : ""}${playlist ? " has-order" : ""}${Number(item.id) === model?.currentSongId ? " is-current" : ""}">${selection}<button class="track-play" data-play-id="${esc(item.id ?? "")}" data-uri="${esc(uri)}" aria-label="播放 ${esc(item.Title || item.Name || "曲目")}">${icon("play-filled")}</button><span class="track-index">${String(index + 1).padStart(2, "0")}</span><div><b>${esc(item.Title || item.Name || "未知曲目")}</b><small>${esc([item.Artist || item.AlbumArtist, item.Album].filter(Boolean).join(" · "))}</small></div><time>${time(item.Duration || item.duration || 0)}</time>${action}</article>`;
+    return `<article class="track-row${selectable ? " has-selection" : ""}${playlist ? " has-order" : ""}${Number(item.id) === model?.currentSongId ? " is-current" : ""}"${queue ? ` data-song-id="${esc(item.id ?? "")}"` : ""}>${selection}<button class="track-play" data-play-id="${esc(item.id ?? "")}" data-uri="${esc(uri)}" aria-label="播放 ${esc(item.Title || item.Name || "曲目")}">${icon("play-filled")}</button><span class="track-index">${String(index + 1).padStart(2, "0")}</span><div><b>${esc(item.Title || item.Name || "未知曲目")}</b><small>${esc([item.Artist || item.AlbumArtist, item.Album].filter(Boolean).join(" · "))}</small></div><time>${time(item.Duration || item.duration || 0)}</time>${action}</article>`;
   }).join("")}</div>` : empty(title, "换一个分类或搜索词试试");
   $$('[data-play-id]', $("#playerContent")).forEach(button => button.onclick = () => run(() => button.dataset.playId ? mpd.actions.playSong(button.dataset.playId) : mpd.actions.replaceUris([button.dataset.uri])));
   $$('[data-add-uri]', $("#playerContent")).forEach(button => button.onclick = () => run(() => mpd.actions.appendUris([button.dataset.addUri])));
@@ -184,8 +217,11 @@ async function addSelectionToPlaylist(plist, boxes) {
 async function renderPlaylists() {
   $(".player-content-head .play-all")?.remove();
   const lists = await mpd.playlists();
-  $("#playerContent").innerHTML = lists.length ? `<div class="playlist-grid">${lists.map(item => `<article class="playlist-card"><button data-plist="${esc(item.uri || item.Name)}"><span>${icon("playlist")}</span><div><b>${esc(item.Name || item.uri)}</b><small>打开歌单</small></div>${icon("chevron-right")}</button></article>`).join("")}</div>` : empty("还没有歌单", "从曲库搜索歌曲后可创建第一个歌单");
-  $$('[data-plist]', $("#playerContent")).forEach(button => button.onclick = () => showPlaylist(button.dataset.plist));
+  $("#playerContent").innerHTML = lists.length ? `<div class="playlist-grid">${lists.map(item => { const name = item.Name || item.Playlist || item.uri || ""; return `<article class="playlist-card"><button data-plist="${esc(name)}"><span>${icon("playlist")}</span><div><b>${esc(name || "未命名歌单")}</b><small>打开歌单</small></div>${icon("chevron-right")}</button></article>`; }).join("")}</div>` : empty("还没有歌单", "从曲库搜索歌曲后可创建第一个歌单");
+  $$('[data-plist]', $("#playerContent")).forEach(button => button.onclick = async () => {
+    if (!button.dataset.plist) return toast("歌单名称无效", true);
+    try { await showPlaylist(button.dataset.plist); } catch (error) { toast(error.message, true, 5000); }
+  });
 }
 
 async function showPlaylist(plist) {
@@ -218,7 +254,7 @@ async function renderRadios(query) {
 function addPlayAll(value, playlist) { const head = $(".player-content-head"); head.querySelector(".play-all")?.remove(); const button = document.createElement("button"); button.className = "play-all"; button.innerHTML = `${icon("play-filled")}播放全部`; button.onclick = () => run(() => playlist ? mpd.actions.replacePlaylist(value) : mpd.actions.replaceUris(value)); head.append(button); }
 async function playerAction(action) { const fn = action === "toggle" ? (model?.state === "play" ? mpd.actions.pause : mpd.actions.play) : mpd.actions[action]; if (fn) await run(fn); }
 async function run(fn, announce = true) { try { await fn(); if (announce) toast("播放器已更新"); await refreshPlayer(); return true; } catch (error) { toast(error.message, true, 5000); return false; } }
-function scheduleRefresh() { clearTimeout(scheduleRefresh.timer); scheduleRefresh.timer = setTimeout(async () => { await refreshPlayer(); if (activeView === "queue") renderView(activeView); }, 180); }
+function scheduleRefresh() { clearTimeout(scheduleRefresh.timer); scheduleRefresh.timer = setTimeout(async () => { await refreshPlayer(); if (activeView === "queue") await refreshQueue(); }, 180); }
 function startClock() { clearInterval(refreshTimer); refreshTimer = setInterval(() => { if (!model) return; if (model.state === "play") model.elapsed = Math.min(model.duration || Infinity, model.elapsed + .25); $("#playerSeek").value = model.elapsed; $("#playerElapsed").textContent = time(model.elapsed); }, 250); }
 function setEngineState(ok) { const node = $("#playerEngineState"); node.classList.toggle("online", ok); node.innerHTML = `<i></i><span>${ok ? "音乐引擎在线" : "正在重连"}</span>`; }
 function empty(title, copy, error = false) { return `<div class="player-empty${error ? " is-error" : ""}"><img src="/art/empty-state.svg" alt=""><h3>${esc(title)}</h3><p>${esc(copy)}</p></div>`; }

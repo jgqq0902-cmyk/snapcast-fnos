@@ -62,11 +62,15 @@
 .device-dialog[open] { display: grid; place-items: center; }
 .device-dialog::backdrop { background: rgb(2 5 9 / .72); backdrop-filter: blur(12px); }
 .device-dialog-card { width: min(540px, 100%); display: grid; gap: 22px; padding: 24px; border: 1px solid rgb(255 255 255 / .12); border-radius: 28px; background: radial-gradient(circle at 12% 5%, rgb(108 224 195 / .16), transparent 35%), linear-gradient(145deg, #101a1d, #141423); box-shadow: 0 32px 100px rgb(0 0 0 / .56); }
-.device-dialog-card > header { display: grid; grid-template-columns: 54px minmax(0, 1fr) 42px; align-items: center; gap: 12px; }
-.device-dialog-card > header label { min-width: 0; display: grid; gap: 5px; }
-.device-dialog-card > header label span { color: rgb(255 255 255 / .48); font-size: 10px; }
+.device-dialog-card > header { display: grid; grid-template-columns: 54px minmax(0, 1fr) 42px 42px; align-items: center; gap: 10px; }
+.device-identity { min-width: 0; display: grid; gap: 5px; }
+.device-identity > span { color: rgb(255 255 255 / .48); font-size: 10px; }
+.device-identity strong { overflow: hidden; font-size: 17px; text-overflow: ellipsis; white-space: nowrap; }
+.device-identity label { min-width: 0; }
+.device-identity label[hidden], .save-device-name[hidden], .edit-device-name[hidden] { display: none; }
 .device-name { width: 100%; height: 44px; padding: 0 12px; border-color: rgb(255 255 255 / .12); color: #fff; background: rgb(255 255 255 / .07); }
-.dialog-close { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 50%; background: rgb(255 255 255 / .07); }
+.dialog-close, .edit-device-name { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 50%; background: rgb(255 255 255 / .07); }
+.dialog-close svg, .edit-device-name svg { width: 18px; height: 18px; }
 .device-volume-control { display: grid; grid-template-columns: 24px minmax(0, 1fr) 34px; align-items: center; gap: 12px; }
 .device-volume-control svg { width: 20px; height: 20px; }
 .device-volume-control output { color: rgb(255 255 255 / .58); font: 11px var(--font-mono); text-align: right; }
@@ -93,4 +97,9 @@
   .speaker-mesh { height: 128px; margin-top: 26px; }
   .speaker-pebble { height: 112px; margin-top: 42px; }
   .speaker-oval { height: 94px; margin-top: 60px; }
+  .device-dialog { padding: 12px; }
+  .device-dialog-card { padding: 18px; }
+  .device-dialog-card > header { grid-template-columns: 46px minmax(0, 1fr) 40px 40px; gap: 7px; }
+  .speaker-mini { width: 46px; }
+  .dialog-close, .edit-device-name { width: 40px; height: 40px; }
 }
