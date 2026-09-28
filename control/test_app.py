@@ -393,6 +393,7 @@ class ProductionConfigTest(unittest.TestCase):
         adapter = (static / "js" / "mympd-adapter.js").read_text(encoding="utf-8")
         player = (static / "js" / "player.js").read_text(encoding="utf-8")
         styles = (static / "styles" / "player.css").read_text(encoding="utf-8")
+        responsive = (static / "styles" / "responsive.css").read_text(encoding="utf-8")
         icons = (static / "icons.svg").read_text(encoding="utf-8")
         self.assertNotIn("<iframe", index)
         view_order = [
@@ -429,6 +430,11 @@ class ProductionConfigTest(unittest.TestCase):
         self.assertIn("cyclePlaybackMode", player)
         self.assertIn('value === true || value === 1 || value === "1"', adapter)
         self.assertNotIn("播放器已更新", player)
+        self.assertIn("installTouchSafeRange", player)
+        self.assertIn("coverChanged", player)
+        self.assertIn('node.getAttribute("href") !== value', player)
+        self.assertIn("(max-width: 700px) and (pointer: coarse)", responsive)
+        self.assertIn("pointer-events: none", responsive)
         for icon in ('"queue"', '"repeat"', '"repeat-one"', '"shuffle"'):
             self.assertIn(icon, player)
         self.assertNotIn('if (!await askConfirm("生成随机播放队列？"', player)

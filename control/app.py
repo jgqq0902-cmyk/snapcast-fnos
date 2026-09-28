@@ -669,7 +669,7 @@ class Handler(BaseHTTPRequestHandler):
                         revision = PLAYER_EVENT_REVISION
                     self.wfile.write(f"event: update\ndata: {{\"revision\":{revision}}}\n\n".encode())
                     self.wfile.flush()
-            except (BrokenPipeError, ConnectionResetError):
+            except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
                 pass
             return
         if path == "/api/player/art":

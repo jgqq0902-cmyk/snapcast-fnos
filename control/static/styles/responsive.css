@@ -11,7 +11,7 @@
 }
 
 @media (max-width: 700px) {
-  button, a, summary, input[type="range"], .speaker-toggle { touch-action: pan-y; -webkit-tap-highlight-color: transparent; }
+  button, a, summary, .speaker-toggle { touch-action: pan-y; -webkit-tap-highlight-color: transparent; }
   input[type="range"] { height: 36px; }
   .device-shell .workspace { padding: 16px 10px 26px; }
   .page-header { align-items: center; margin-bottom: 14px; }
@@ -20,6 +20,17 @@
   .devices-panel { padding: 12px; border-radius: 22px; }
   .system-health summary span { display: none; }
   .system-health summary { width: 44px; padding: 0; justify-content: center; }
+}
+
+.touch-range-unlock { display: none; }
+
+@media (max-width: 700px) and (pointer: coarse) {
+  .touch-range-shell { display: grid; grid-template-columns: minmax(0, 1fr) 38px; align-items: center; gap: 8px; width: 100%; }
+  .touch-range-shell input[type="range"] { min-width: 0; pointer-events: none; touch-action: pan-y; opacity: .72; }
+  .touch-range-shell.is-unlocked input[type="range"] { pointer-events: auto; touch-action: none; opacity: 1; }
+  .touch-range-unlock { display: grid; width: 36px; height: 36px; place-items: center; border: 1px solid rgb(255 255 255 / .11); border-radius: 50%; color: rgb(255 255 255 / .66); background: rgb(255 255 255 / .06); }
+  .touch-range-unlock svg { width: 17px; height: 17px; }
+  .touch-range-shell.is-unlocked .touch-range-unlock { color: #10201d; border-color: transparent; background: var(--accent); box-shadow: 0 0 18px var(--accent-soft); }
 }
 
 @media (max-width: 400px) {

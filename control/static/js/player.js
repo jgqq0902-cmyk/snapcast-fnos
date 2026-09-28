@@ -1,12 +1,14 @@
 import * as mpd from "./mympd-adapter.js?v=20260928-sync";
-import { $, $$, askConfirm, esc, icon, toast } from "./ui.js";
+import { $, $$, askConfirm, esc, icon, installTouchSafeRange, toast } from "./ui.js";
 
 let initialized = false, activeView = "now", requestedView, model, refreshTimer, searchTimer, disconnectSocket;
-let externalSourceActive = false;
+let externalSourceActive = null;
 let queueSignature = "", focusedQueueSongId = null;
 
 export function syncActiveSource(sources = []) {
-  externalSourceActive = sources.some(source => String(source.id).toLowerCase() === "airplay" && source.status === "playing");
+  const active = sources.some(source => String(source.id).toLowerCase() === "airplay" && source.status === "playing");
+  if (active === externalSourceActive) return;
+  externalSourceActive = active;
   const banner = $("#activeSourceBanner");
   if (!banner) return;
   banner.hidden = !externalSourceActive;
@@ -30,6 +32,8 @@ export function initPlayer() {
   $("#playerSeek").onchange = event => run(() => mpd.actions.seek(Number(event.target.value)));
   $("#playerVolume").oninput = event => { $("#playerVolumeValue").value = event.target.value; };
   $("#playerVolume").onchange = event => run(() => mpd.actions.volume(Number(event.target.value)), false);
+  installTouchSafeRange($("#playerSeek"), "启用播放进度调节");
+  installTouchSafeRange($("#playerVolume"), "启用播放器音量调节");
   $("#playerSearch").oninput = event => { clearTimeout(searchTimer); searchTimer = setTimeout(() => renderView(activeView, event.target.value.trim()), 280); };
   disconnectSocket = mpd.connectNotifications(() => scheduleRefresh(), connected => setEngineState(connected));
   syncViewChrome();
@@ -51,18 +55,22 @@ async function refreshPlayer() {
   try {
     model = await mpd.getPlayer();
     const song = model.song;
-    $("#playerTitle").textContent = song.title;
-    $("#playerArtist").textContent = [song.artist, song.album].filter(Boolean).join(" · ") || "从曲库、歌单或网络电台开始";
-    $("#playerOrigin").textContent = /^https?:/.test(song.uri) ? "网络音频" : "本地曲库";
-    $("#playerCover").src = model.cover;
+    setText($("#playerTitle"), song.title);
+    setText($("#playerArtist"), [song.artist, song.album].filter(Boolean).join(" · ") || "从曲库、歌单或网络电台开始");
+    setText($("#playerOrigin"), /^https?:/.test(song.uri) ? "网络音频" : "本地曲库");
+    const cover = $("#playerCover");
+    const coverChanged = cover.getAttribute("src") !== model.cover;
+    if (coverChanged) cover.src = model.cover;
     $("#playerCover").onerror = () => { $("#playerCover").src = "/art/album-placeholder.svg"; };
-    $("#playerSeek").max = Math.max(model.duration, 1); $("#playerSeek").value = Math.min(model.elapsed, model.duration || 1);
-    $("#playerDuration").textContent = model.duration ? time(model.duration) : "直播";
-    $("#playerVolume").value = model.volume; $("#playerVolumeValue").value = model.volume;
-    $("#playerToggleIcon").setAttribute("href", model.state === "play" ? "/icons.svg#icon-pause" : "/icons.svg#icon-play-filled");
+    $("#playerSeek").max = Math.max(model.duration, 1);
+    if (!isRangeInteracting($("#playerSeek"))) $("#playerSeek").value = Math.min(model.elapsed, model.duration || 1);
+    setText($("#playerDuration"), model.duration ? time(model.duration) : "直播");
+    if (!isRangeInteracting($("#playerVolume"))) $("#playerVolume").value = model.volume;
+    $("#playerVolumeValue").value = model.volume;
+    setHref($("#playerToggleIcon"), model.state === "play" ? "/icons.svg#icon-pause" : "/icons.svg#icon-play-filled");
     syncPlaybackMode();
     document.querySelector(".lightfield-player").classList.toggle("is-playing", model.state === "play");
-    extractAccent($("#playerCover"));
+    if (coverChanged) extractAccent(cover);
     setEngineState(true);
   } catch (error) { setEngineState(false); toast(error.message, true); }
 }
@@ -272,10 +280,11 @@ function syncPlaybackMode() {
   const mode = currentPlaybackMode();
   const [label, iconName] = modes[mode];
   const button = $("#playerModeButton");
+  if (button.dataset.mode === mode) return;
   button.dataset.mode = mode;
   button.setAttribute("aria-label", `${label}，点击切换`);
   button.title = label;
-  $("#playerModeIcon").setAttribute("href", `/icons.svg#icon-${iconName}`);
+  setHref($("#playerModeIcon"), `/icons.svg#icon-${iconName}`);
 }
 async function cyclePlaybackMode() {
   const order = ["order", "repeat-all", "repeat-one", "shuffle"];
@@ -290,8 +299,11 @@ async function cyclePlaybackMode() {
 }
 async function run(fn) { try { await fn(); await refreshPlayer(); return true; } catch (error) { toast(error.message, true, 5000); return false; } }
 function scheduleRefresh() { clearTimeout(scheduleRefresh.timer); scheduleRefresh.timer = setTimeout(async () => { await refreshPlayer(); if (activeView === "queue") await refreshQueue(); }, 180); }
-function startClock() { clearInterval(refreshTimer); refreshTimer = setInterval(() => { if (!model) return; if (model.state === "play") model.elapsed = Math.min(model.duration || Infinity, model.elapsed + .25); $("#playerSeek").value = model.elapsed; $("#playerElapsed").textContent = time(model.elapsed); }, 250); }
-function setEngineState(ok) { const node = $("#playerEngineState"); node.classList.toggle("online", ok); node.innerHTML = `<i></i><span>${ok ? "音乐引擎在线" : "正在重连"}</span>`; }
+function startClock() { clearInterval(refreshTimer); refreshTimer = setInterval(() => { if (!model) return; if (model.state === "play") model.elapsed = Math.min(model.duration || Infinity, model.elapsed + .25); if (!isRangeInteracting($("#playerSeek"))) $("#playerSeek").value = model.elapsed; $("#playerElapsed").textContent = time(model.elapsed); }, 250); }
+function setEngineState(ok) { const node = $("#playerEngineState"); if (node.dataset.online === String(ok)) return; node.dataset.online = String(ok); node.classList.toggle("online", ok); node.querySelector("span").textContent = ok ? "音乐引擎在线" : "正在重连"; }
+function setText(node, value) { if (node.textContent !== String(value)) node.textContent = value; }
+function setHref(node, value) { if (node.getAttribute("href") !== value) node.setAttribute("href", value); }
+function isRangeInteracting(input) { return document.activeElement === input || input.closest(".touch-range-shell")?.classList.contains("is-unlocked"); }
 function empty(title, copy, error = false) { return `<div class="player-empty${error ? " is-error" : ""}"><img src="/art/empty-state.svg" alt=""><h3>${esc(title)}</h3><p>${esc(copy)}</p></div>`; }
 function time(seconds) { const n = Math.max(0, Math.floor(Number(seconds) || 0)); return `${Math.floor(n / 60)}:${String(n % 60).padStart(2, "0")}`; }
 function installArtworkFallback(selector, fallback) { $$(selector, $("#playerContent")).forEach(image => image.addEventListener("error", () => { if (!image.src.endsWith(fallback)) image.src = fallback; }, { once: true })); }
