@@ -59,9 +59,10 @@ async function refreshPlayer() {
     setText($("#playerArtist"), [song.artist, song.album].filter(Boolean).join(" · ") || "从曲库、歌单或网络电台开始");
     setText($("#playerOrigin"), /^https?:/.test(song.uri) ? "网络音频" : "本地曲库");
     const cover = $("#playerCover");
-    const coverChanged = cover.getAttribute("src") !== model.cover;
-    if (coverChanged) cover.src = model.cover;
-    $("#playerCover").onerror = () => { $("#playerCover").src = "/art/album-placeholder.svg"; };
+    const coverChanged = cover.dataset.requestedCover !== model.cover;
+    cover.onerror = () => { cover.onerror = null; cover.src = "/art/album-placeholder.svg"; };
+    if (coverChanged) { cover.dataset.requestedCover = model.cover; cover.src = model.cover; }
+    $("#playerSeek").disabled = externalSourceActive || !(model.duration > 0);
     $("#playerSeek").max = Math.max(model.duration, 1);
     if (!isRangeInteracting($("#playerSeek"))) { $("#playerSeek").value = Math.min(model.elapsed, model.duration || 1); syncThumbDragRange($("#playerSeek")); }
     setText($("#playerDuration"), model.duration ? time(model.duration) : "直播");
@@ -298,7 +299,7 @@ async function cyclePlaybackMode() {
   await run(() => mpd.actions.playbackMode(options[next]));
 }
 async function run(fn) { try { await fn(); await refreshPlayer(); return true; } catch (error) { toast(error.message, true, 5000); return false; } }
-function scheduleRefresh() { clearTimeout(scheduleRefresh.timer); scheduleRefresh.timer = setTimeout(async () => { await refreshPlayer(); if (activeView === "queue") await refreshQueue(); }, 180); }
+function scheduleRefresh() { clearTimeout(scheduleRefresh.timer); scheduleRefresh.timer = setTimeout(async () => { try { await refreshPlayer(); if (activeView === "queue") await refreshQueue(); } catch (error) { setEngineState(false); } }, 180); }
 function startClock() { clearInterval(refreshTimer); refreshTimer = setInterval(() => { if (!model) return; if (model.state === "play") model.elapsed = Math.min(model.duration || Infinity, model.elapsed + .25); if (!isRangeInteracting($("#playerSeek"))) { $("#playerSeek").value = model.elapsed; syncThumbDragRange($("#playerSeek")); } $("#playerElapsed").textContent = time(model.elapsed); }, 250); }
 function setEngineState(ok) { const node = $("#playerEngineState"); if (node.dataset.online === String(ok)) return; node.dataset.online = String(ok); node.classList.toggle("online", ok); node.querySelector("span").textContent = ok ? "音乐引擎在线" : "正在重连"; }
 function setText(node, value) { if (node.textContent !== String(value)) node.textContent = value; }

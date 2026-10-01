@@ -1,6 +1,6 @@
 import { post } from "./api.js";
 import { state } from "./store.js";
-import { $, $$, esc, icon, installThumbDragRange, toast } from "./ui.js";
+import { $, $$, esc, icon, installThumbDragRange, syncThumbDragRange, toast } from "./ui.js";
 
 let renderSignature = "";
 
@@ -20,6 +20,7 @@ export function renderZones(force = false) {
     })),
   });
   if (!force && signature === renderSignature) return;
+  if ($("#devicePanelHost dialog[open]")) return;
   renderSignature = signature;
   const host = $("#devicePanelHost");
   host.replaceChildren();
@@ -57,6 +58,7 @@ function clientCard(client, index) {
     </form></dialog>`;
   $(".speaker-toggle", card).onclick = () => mutate("/api/snapcast/client-active", { clientId: client.id, active: !active }, true);
   const dialog = $(".device-dialog", card);
+  dialog.addEventListener("close", () => renderZones(true));
   $(".speaker-settings", card).onclick = () => dialog.showModal();
   $(".dialog-close", card).onclick = () => dialog.close();
   $(".edit-device-name", dialog).onclick = () => {
@@ -77,8 +79,10 @@ function clientCard(client, index) {
   volume.onchange = () => mutate("/api/snapcast/volume", { clientId: client.id, percent: Number(volume.value), muted: false }, true);
   const range = $(".latency-range", card), number = $(".latency-number", card), latencyOutput = $(".latency-control>div output", card);
   const setLatency = value => {
+    if (String(value).trim() === "" || !Number.isFinite(Number(value))) { toast("请输入有效的延迟数值", true); return; }
     const normalized = Math.max(-1000, Math.min(5000, Math.round(Number(value) / 10) * 10));
     number.value = normalized; range.value = Math.max(-500, Math.min(500, normalized)); latencyOutput.value = `${normalized} ms`;
+    syncThumbDragRange(range);
     mutate("/api/snapcast/latency", { clientId: client.id, latency: normalized }, true);
   };
   range.oninput = () => { number.value = range.value; latencyOutput.value = `${range.value} ms`; };

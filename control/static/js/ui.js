@@ -19,18 +19,22 @@ export function installThumbDragRange(input) {
     const min = Number(input.min || 0), max = Number(input.max || 100);
     const ratio = max > min ? (Number(input.value) - min) / (max - min) : 0;
     const visualRatio = getComputedStyle(input).direction === "rtl" ? 1 - ratio : ratio;
-    shell.style.setProperty("--thumb-position", `${Math.max(0, Math.min(1, visualRatio)) * 100}%`);
+    const fraction = Math.max(0, Math.min(1, visualRatio));
+    shell.style.setProperty("--thumb-position", `calc(${fraction * 100}% + ${10 - fraction * 20}px)`);
   };
-  let dragging = false;
+  let dragging = false, initialValue, pointerId;
   handle.addEventListener("pointerdown", event => {
     if (event.pointerType === "mouse" && !matchMedia("(pointer: coarse)").matches) return;
+    if (dragging || input.disabled || input.closest("[inert]")) return;
+    initialValue = input.value;
+    pointerId = event.pointerId;
     dragging = true;
     input.dataset.dragging = "true";
     handle.setPointerCapture(event.pointerId);
     event.preventDefault();
   });
   handle.addEventListener("pointermove", event => {
-    if (!dragging) return;
+    if (!dragging || event.pointerId !== pointerId) return;
     const rect = shell.getBoundingClientRect();
     let ratio = Math.max(0, Math.min(1, (event.clientX - rect.left - 10) / Math.max(1, rect.width - 20)));
     if (getComputedStyle(input).direction === "rtl") ratio = 1 - ratio;
@@ -42,14 +46,21 @@ export function installThumbDragRange(input) {
     event.preventDefault();
   });
   const finish = event => {
-    if (!dragging) return;
+    if (!dragging || event.pointerId !== pointerId) return;
     dragging = false;
     delete input.dataset.dragging;
-    input.dispatchEvent(new Event("change", { bubbles: true }));
+    if (event.type !== "pointerup" || input.disabled || input.closest("[inert]")) {
+      input.value = initialValue;
+      sync();
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    } else if (input.value !== initialValue) {
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    }
     if (event?.pointerId !== undefined && handle.hasPointerCapture(event.pointerId)) handle.releasePointerCapture(event.pointerId);
   };
   handle.addEventListener("pointerup", finish);
   handle.addEventListener("pointercancel", finish);
+  handle.addEventListener("lostpointercapture", finish);
   input.addEventListener("input", sync);
   input.addEventListener("thumb-sync", sync);
   sync();
