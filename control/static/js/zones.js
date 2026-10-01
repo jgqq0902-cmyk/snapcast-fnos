@@ -1,6 +1,6 @@
 import { post } from "./api.js";
 import { state } from "./store.js";
-import { $, $$, esc, icon, installTouchSafeRange, toast } from "./ui.js";
+import { $, $$, esc, icon, installThumbDragRange, toast } from "./ui.js";
 
 let renderSignature = "";
 
@@ -83,8 +83,8 @@ function clientCard(client, index) {
   };
   range.oninput = () => { number.value = range.value; latencyOutput.value = `${range.value} ms`; };
   range.onchange = () => setLatency(range.value);
-  installTouchSafeRange(volume, `启用${client.name}音量调节`);
-  installTouchSafeRange(range, `启用${client.name}延迟调节`);
+  installThumbDragRange(volume);
+  installThumbDragRange(range);
   number.onchange = () => setLatency(number.value);
   $$('[data-step]', card).forEach(button => { button.onclick = () => setLatency(Number(number.value) + Number(button.dataset.step)); });
   $("[data-zero]", card).onclick = () => setLatency(0);

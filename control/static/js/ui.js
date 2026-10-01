@@ -3,31 +3,60 @@ export const $$ = (selector, root = document) => [...root.querySelectorAll(selec
 export const icon = name => `<svg aria-hidden="true"><use href="/icons.svg#icon-${name}"/></svg>`;
 export const esc = value => String(value ?? "").replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
 
-export function installTouchSafeRange(input, label = "调节滑轨") {
-  if (!input || input.closest(".touch-range-shell")) return;
+export function installThumbDragRange(input) {
+  if (!input || input.closest(".thumb-only-range")) return;
+  input.dataset.thumbDrag = "ready";
+  input.classList.add("thumb-drag-range");
   const shell = document.createElement("span");
-  shell.className = "touch-range-shell";
+  shell.className = "thumb-only-range";
   input.before(shell);
   shell.append(input);
-  const unlock = document.createElement("button");
-  unlock.type = "button";
-  unlock.className = "touch-range-unlock";
-  unlock.setAttribute("aria-label", label);
-  unlock.setAttribute("aria-pressed", "false");
-  unlock.innerHTML = icon("edit");
-  shell.append(unlock);
-  const lock = () => {
-    shell.classList.remove("is-unlocked");
-    unlock.setAttribute("aria-pressed", "false");
+  const handle = document.createElement("span");
+  handle.className = "thumb-only-handle";
+  handle.setAttribute("aria-hidden", "true");
+  shell.append(handle);
+  const sync = () => {
+    const min = Number(input.min || 0), max = Number(input.max || 100);
+    const ratio = max > min ? (Number(input.value) - min) / (max - min) : 0;
+    const visualRatio = getComputedStyle(input).direction === "rtl" ? 1 - ratio : ratio;
+    shell.style.setProperty("--thumb-position", `${Math.max(0, Math.min(1, visualRatio)) * 100}%`);
   };
-  if (matchMedia("(max-width: 700px) and (pointer: coarse)").matches) lock();
-  unlock.onclick = () => {
-    const unlocked = shell.classList.toggle("is-unlocked");
-    unlock.setAttribute("aria-pressed", String(unlocked));
-    if (unlocked) input.focus({ preventScroll: true });
+  let dragging = false;
+  handle.addEventListener("pointerdown", event => {
+    if (event.pointerType === "mouse" && !matchMedia("(pointer: coarse)").matches) return;
+    dragging = true;
+    input.dataset.dragging = "true";
+    handle.setPointerCapture(event.pointerId);
+    event.preventDefault();
+  });
+  handle.addEventListener("pointermove", event => {
+    if (!dragging) return;
+    const rect = shell.getBoundingClientRect();
+    let ratio = Math.max(0, Math.min(1, (event.clientX - rect.left - 10) / Math.max(1, rect.width - 20)));
+    if (getComputedStyle(input).direction === "rtl") ratio = 1 - ratio;
+    const min = Number(input.min || 0), max = Number(input.max || 100), step = Number(input.step || 1);
+    const raw = min + ratio * (max - min);
+    input.value = String(Math.max(min, Math.min(max, Math.round((raw - min) / step) * step + min)));
+    sync();
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    event.preventDefault();
+  });
+  const finish = event => {
+    if (!dragging) return;
+    dragging = false;
+    delete input.dataset.dragging;
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    if (event?.pointerId !== undefined && handle.hasPointerCapture(event.pointerId)) handle.releasePointerCapture(event.pointerId);
   };
-  input.addEventListener("change", lock);
-  input.addEventListener("blur", () => setTimeout(lock, 120));
+  handle.addEventListener("pointerup", finish);
+  handle.addEventListener("pointercancel", finish);
+  input.addEventListener("input", sync);
+  input.addEventListener("thumb-sync", sync);
+  sync();
+}
+
+export function syncThumbDragRange(input) {
+  input?.dispatchEvent(new Event("thumb-sync"));
 }
 let toastTimer;
 export function toast(message, error = false, duration = 2800) {

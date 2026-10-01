@@ -1,8 +1,8 @@
 import { post, request } from "./js/api.js";
 import { state } from "./js/store.js";
 import { $, $$, closeDialog, openDialog, toast } from "./js/ui.js";
-import { renderZones } from "./js/zones.js?v=20260928-touch";
-import { activatePlayer, resetPlayer, syncActiveSource } from "./js/player.js?v=20260928-touch";
+import { renderZones } from "./js/zones.js?v=20261001-thumb";
+import { activatePlayer, resetPlayer, syncActiveSource } from "./js/player.js?v=20261001-thumb";
 
 let pollTimer;
 let bootstrapped = false;

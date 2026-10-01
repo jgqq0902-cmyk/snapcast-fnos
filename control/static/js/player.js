@@ -1,5 +1,5 @@
 import * as mpd from "./mympd-adapter.js?v=20260928-sync";
-import { $, $$, askConfirm, esc, icon, installTouchSafeRange, toast } from "./ui.js";
+import { $, $$, askConfirm, esc, icon, installThumbDragRange, syncThumbDragRange, toast } from "./ui.js";
 
 let initialized = false, activeView = "now", requestedView, model, refreshTimer, searchTimer, disconnectSocket;
 let externalSourceActive = null;
@@ -32,8 +32,8 @@ export function initPlayer() {
   $("#playerSeek").onchange = event => run(() => mpd.actions.seek(Number(event.target.value)));
   $("#playerVolume").oninput = event => { $("#playerVolumeValue").value = event.target.value; };
   $("#playerVolume").onchange = event => run(() => mpd.actions.volume(Number(event.target.value)), false);
-  installTouchSafeRange($("#playerSeek"), "启用播放进度调节");
-  installTouchSafeRange($("#playerVolume"), "启用播放器音量调节");
+  installThumbDragRange($("#playerSeek"));
+  installThumbDragRange($("#playerVolume"));
   $("#playerSearch").oninput = event => { clearTimeout(searchTimer); searchTimer = setTimeout(() => renderView(activeView, event.target.value.trim()), 280); };
   disconnectSocket = mpd.connectNotifications(() => scheduleRefresh(), connected => setEngineState(connected));
   syncViewChrome();
@@ -63,9 +63,9 @@ async function refreshPlayer() {
     if (coverChanged) cover.src = model.cover;
     $("#playerCover").onerror = () => { $("#playerCover").src = "/art/album-placeholder.svg"; };
     $("#playerSeek").max = Math.max(model.duration, 1);
-    if (!isRangeInteracting($("#playerSeek"))) $("#playerSeek").value = Math.min(model.elapsed, model.duration || 1);
+    if (!isRangeInteracting($("#playerSeek"))) { $("#playerSeek").value = Math.min(model.elapsed, model.duration || 1); syncThumbDragRange($("#playerSeek")); }
     setText($("#playerDuration"), model.duration ? time(model.duration) : "直播");
-    if (!isRangeInteracting($("#playerVolume"))) $("#playerVolume").value = model.volume;
+    if (!isRangeInteracting($("#playerVolume"))) { $("#playerVolume").value = model.volume; syncThumbDragRange($("#playerVolume")); }
     $("#playerVolumeValue").value = model.volume;
     setHref($("#playerToggleIcon"), model.state === "play" ? "/icons.svg#icon-pause" : "/icons.svg#icon-play-filled");
     syncPlaybackMode();
@@ -299,11 +299,11 @@ async function cyclePlaybackMode() {
 }
 async function run(fn) { try { await fn(); await refreshPlayer(); return true; } catch (error) { toast(error.message, true, 5000); return false; } }
 function scheduleRefresh() { clearTimeout(scheduleRefresh.timer); scheduleRefresh.timer = setTimeout(async () => { await refreshPlayer(); if (activeView === "queue") await refreshQueue(); }, 180); }
-function startClock() { clearInterval(refreshTimer); refreshTimer = setInterval(() => { if (!model) return; if (model.state === "play") model.elapsed = Math.min(model.duration || Infinity, model.elapsed + .25); if (!isRangeInteracting($("#playerSeek"))) $("#playerSeek").value = model.elapsed; $("#playerElapsed").textContent = time(model.elapsed); }, 250); }
+function startClock() { clearInterval(refreshTimer); refreshTimer = setInterval(() => { if (!model) return; if (model.state === "play") model.elapsed = Math.min(model.duration || Infinity, model.elapsed + .25); if (!isRangeInteracting($("#playerSeek"))) { $("#playerSeek").value = model.elapsed; syncThumbDragRange($("#playerSeek")); } $("#playerElapsed").textContent = time(model.elapsed); }, 250); }
 function setEngineState(ok) { const node = $("#playerEngineState"); if (node.dataset.online === String(ok)) return; node.dataset.online = String(ok); node.classList.toggle("online", ok); node.querySelector("span").textContent = ok ? "音乐引擎在线" : "正在重连"; }
 function setText(node, value) { if (node.textContent !== String(value)) node.textContent = value; }
 function setHref(node, value) { if (node.getAttribute("href") !== value) node.setAttribute("href", value); }
-function isRangeInteracting(input) { return document.activeElement === input || input.closest(".touch-range-shell")?.classList.contains("is-unlocked"); }
+function isRangeInteracting(input) { return document.activeElement === input || input.dataset.dragging === "true"; }
 function empty(title, copy, error = false) { return `<div class="player-empty${error ? " is-error" : ""}"><img src="/art/empty-state.svg" alt=""><h3>${esc(title)}</h3><p>${esc(copy)}</p></div>`; }
 function time(seconds) { const n = Math.max(0, Math.floor(Number(seconds) || 0)); return `${Math.floor(n / 60)}:${String(n % 60).padStart(2, "0")}`; }
 function installArtworkFallback(selector, fallback) { $$(selector, $("#playerContent")).forEach(image => image.addEventListener("error", () => { if (!image.src.endsWith(fallback)) image.src = fallback; }, { once: true })); }
