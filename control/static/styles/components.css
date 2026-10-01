@@ -39,3 +39,13 @@
 .is-pending { position: relative; pointer-events: none; }
 .is-pending::after { content: ""; width: 14px; height: 14px; margin-left: 8px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* Shared surfaces and feedback use the same palette as the player. */
+.modal { background: rgb(5 12 16 / .56); }
+.modal::backdrop { background: rgb(5 12 16 / .48); }
+.dialog-card { background: linear-gradient(145deg, #1a2c32, #111d24); }
+.dialog-card h2 { font-size: 24px; line-height: 1.3; letter-spacing: -.02em; }
+.dialog-actions { justify-content: flex-end; margin-bottom: 0; gap: 10px; }
+.dialog-actions button { min-height: 44px; }
+.toast { bottom: max(22px, env(safe-area-inset-bottom)); border: 1px solid var(--line); border-radius: 16px; line-height: 1.5; text-align: center; box-shadow: 0 12px 36px rgb(0 0 0 / .3); }
+.state-panel { border-style: solid; background: linear-gradient(145deg, rgb(29 48 53 / .6), rgb(14 24 31 / .8)); }

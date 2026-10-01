@@ -56,6 +56,25 @@
   :root { --control: 44px; }
   .latency-control button, .secondary-btn, .accent-btn { min-height: 44px; }
   .latency-control > footer input { min-height: 44px; }
+  .track-play, .track-remove, .track-add { width: 40px; height: 44px; }
+  .track-row { grid-template-columns: 40px minmax(0, 1fr) 40px; padding-inline: 4px; gap: 8px; }
+  .track-index, .track-row time { display: none; }
+  .track-row.has-selection { grid-template-columns: 26px 40px minmax(0, 1fr) 40px; }
+  .track-row.has-order { grid-template-columns: 26px 40px minmax(0, 1fr) 76px; }
+  .track-order button { width: 36px; height: 44px; }
+  .selection-bar button, .playlist-edit-head button { min-height: 44px; }
+  .speaker-settings { width: 44px; height: 44px; }
+}
+
+@media (max-width: 700px) {
+  .player-content-head { padding: 18px 16px 14px; }
+  .player-content { padding: 0 12px 20px; }
+  .embedded-player .player-tabs { padding: 6px 6px 0; }
+  .embedded-player .player-tabs button { font-size: 11px; gap: 4px; }
+  .selection-bar { top: 0; }
+  .radio-card { grid-template-columns: 56px minmax(0, 1fr) 24px; gap: 12px; padding: 12px; border-radius: 18px; }
+  .radio-card img { width: 56px; height: 56px; border-radius: 14px; }
+  .player-search input, .dialog-card input, .device-name, .latency-number { font-size: 16px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

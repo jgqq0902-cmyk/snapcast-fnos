@@ -185,12 +185,28 @@
 }
 
 /* One compact player instance embedded in the home screen. */
+.player-search:focus-within { border-color: rgb(var(--player-accent) / .7); box-shadow: 0 0 0 3px rgb(var(--player-accent) / .12); }
+.player-content-head h2 { font-size: clamp(22px, 2vw, 28px); line-height: 1.2; letter-spacing: -.02em; }
+.player-content-head { padding: 22px 24px 16px; align-items: center; }
+.player-content { padding: 0 24px 24px; scrollbar-width: thin; overscroll-behavior: contain; }
+.track-row b, .playlist-card b, .radio-card b { font-size: 14px; font-weight: 600; line-height: 1.45; }
+.track-row small, .album-card small, .playlist-card small, .radio-card small, .player-empty p { color: #acbfbd; font-size: 12px; line-height: 1.5; }
+.track-index, .track-row time { color: #a1b5b4; font-size: 11px; }
+.playlist-card, .album-card img { border: 1px solid rgb(255 255 255 / .08); }
+.playlist-card { overflow: hidden; }
+.playlist-card b, .radio-card b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.playlist-card > button { border-radius: inherit; }
+.playlist-card > button:hover, .radio-card:hover { background: rgb(108 224 195 / .08); }
+.player-empty, .player-loading { min-height: min(320px, 45svh); padding: 24px 12px; }
+.player-empty h3 { font-size: 18px; font-weight: 600; }
+.player-empty p { max-width: 30em; }
 .embedded-player { --header-space: 130px; position: relative; inset: auto; z-index: 1; width: 100%; min-height: clamp(520px, calc(100dvh - var(--header-space)), 720px); height: min(760px, calc(100dvh - var(--header-space))); overflow: hidden; border: 1px solid rgb(255 255 255 / .09); border-radius: 30px; box-shadow: 0 34px 90px rgb(0 0 0 / .32); }
 .embedded-player .lightfield-toolbar { display: none; }
 .embedded-player .engine-state span { display: none; }
 .embedded-player .player-layout { overflow: hidden; display: flex; flex-direction: column; }
 .embedded-player .player-tabs { flex: 0 0 auto; order: 0; grid-column: auto; grid-row: auto; padding: 8px 10px 0; }
-.embedded-player .player-tabs button { height: 52px; flex-direction: column; gap: 2px; font-size: 9px; }
+.embedded-player .player-tabs button { height: 56px; flex-direction: column; gap: 5px; font-size: 12px; color: #a8bcba; }
+.embedded-player .player-tabs button.active { color: #effff9; background: rgb(var(--player-accent) / .12); }
 .embedded-player .player-now { min-height: 0; flex: 1; padding: 28px clamp(18px, 3vw, 36px); border: 0; }
 .embedded-player .cover-orbit { width: min(30vh, 250px); }
 .embedded-player .player-browser { min-height: 0; flex: 1; }
