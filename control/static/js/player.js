@@ -1,5 +1,5 @@
-import * as mpd from "./mympd-adapter.js?v=20261002-ios";
-import { $, $$, askConfirm, esc, icon, installThumbDragRange, syncThumbDragRange, toast } from "./ui.js?v=20261002-ios";
+import * as mpd from "./mympd-adapter.js?v=20261002-ios2";
+import { $, $$, askConfirm, closeDialog, esc, icon, installThumbDragRange, openDialog, syncThumbDragRange, toast } from "./ui.js?v=20261002-ios2";
 
 let initialized = false, activeView = "now", requestedView, model, refreshTimer, searchTimer, disconnectSocket;
 let externalSourceActive = null;
@@ -18,7 +18,8 @@ export function syncActiveSource(sources = []) {
   $("#playerModeButton").disabled = externalSourceActive;
   const volume = document.querySelector(".player-volume-popover");
   volume.inert = externalSourceActive;
-  volume.toggleAttribute("aria-disabled", externalSourceActive);
+  if (externalSourceActive) volume.setAttribute("aria-disabled", "true");
+  else volume.removeAttribute("aria-disabled");
   if (externalSourceActive) volume.removeAttribute("open");
 }
 
@@ -47,7 +48,7 @@ export async function activatePlayer(force = false) {
 }
 
 export function resetPlayer() {
-  model = null; clearInterval(refreshTimer); disconnectSocket?.(); initialized = false;
+  model = null; clearInterval(refreshTimer); if (disconnectSocket) disconnectSocket(); initialized = false;
   $("#playerContent").innerHTML = empty("播放器会话已结束", "重新登录后可继续使用曲库与歌单");
 }
 
@@ -78,7 +79,7 @@ async function refreshPlayer() {
 
 async function openView(view) {
   activeView = view; $("#playerSearch").value = "";
-  $(".player-content-head .play-all")?.remove();
+  { const playAll = $(".player-content-head .play-all"); if (playAll) playAll.remove(); }
   syncViewChrome();
   if (view === "now") return;
   await renderView(view, "");
@@ -99,7 +100,7 @@ export function openPlayerView(view) {
 }
 
 async function renderView(view, query = "") {
-  if (view !== "playlists") $(".player-content-head .play-all")?.remove();
+  if (view !== "playlists") { const playAll = $(".player-content-head .play-all"); if (playAll) playAll.remove(); }
   const content = $("#playerContent"); content.setAttribute("aria-busy", "true"); content.innerHTML = `<div class="player-loading"><span></span><b>正在读取${esc($("#playerViewTitle").textContent)}</b></div>`;
   try {
     if (view === "queue") return renderQueue();
@@ -155,7 +156,7 @@ function queueItemsSignature(items) {
 }
 
 function syncQueueCurrent(forceFocus = false) {
-  const currentId = String(model?.currentSongId ?? "");
+  const currentId = String(model && model.currentSongId !== null && model.currentSongId !== undefined ? model.currentSongId : "");
   $$(".track-row[data-song-id]", $("#playerContent")).forEach(row => row.classList.toggle("is-current", row.dataset.songId === currentId));
   const row = $(".track-row.is-current", $("#playerContent"));
   if (!row || (!forceFocus && focusedQueueSongId === currentId)) return;
@@ -170,14 +171,14 @@ function renderTracks(items, title, options = {}) {
   const { queue = false, selectable = false, playlist = "" } = options;
   $("#playerContent").innerHTML = items.length ? `<div class="track-list${selectable ? " is-selectable" : ""}">${items.map((item, index) => {
     const uri = item.uri || item.Uri || "";
-    const position = Number(item.Pos ?? index);
+    const position = Number(item.Pos === null || item.Pos === undefined ? index : item.Pos);
     const selection = selectable ? `<label class="track-select"><input type="checkbox" data-track-select data-uri="${esc(uri)}" data-position="${position}" aria-label="选择 ${esc(item.Title || item.Name || "曲目")}"><span></span></label>` : "";
     const action = queue
       ? `<button class="track-remove" data-remove-id="${esc(item.id)}" aria-label="从队列移除">${icon("close")}</button>`
       : playlist
         ? `<span class="track-order"><button data-move-from="${position}" data-move-to="${Math.max(0, position - 1)}" aria-label="上移" ${index === 0 ? "disabled" : ""}>↑</button><button data-move-from="${position}" data-move-to="${position + 1}" aria-label="下移" ${index === items.length - 1 ? "disabled" : ""}>↓</button></span>`
         : `<button class="track-add" data-add-uri="${esc(uri)}" aria-label="加入队列">${icon("plus")}</button>`;
-    return `<article class="track-row${selectable ? " has-selection" : ""}${playlist ? " has-order" : ""}${Number(item.id) === model?.currentSongId ? " is-current" : ""}"${queue ? ` data-song-id="${esc(item.id ?? "")}"` : ""}>${selection}<button class="track-play" data-play-id="${esc(item.id ?? "")}" data-uri="${esc(uri)}" aria-label="播放 ${esc(item.Title || item.Name || "曲目")}">${icon("play-filled")}</button><span class="track-index">${String(index + 1).padStart(2, "0")}</span><div><b>${esc(item.Title || item.Name || "未知曲目")}</b><small>${esc([item.Artist || item.AlbumArtist, item.Album].filter(Boolean).join(" · "))}</small></div><time>${time(item.Duration || item.duration || 0)}</time>${action}</article>`;
+    return `<article class="track-row${selectable ? " has-selection" : ""}${playlist ? " has-order" : ""}${Number(item.id) === (model && model.currentSongId) ? " is-current" : ""}"${queue ? ` data-song-id="${esc(item.id === null || item.id === undefined ? "" : item.id)}"` : ""}>${selection}<button class="track-play" data-play-id="${esc(item.id === null || item.id === undefined ? "" : item.id)}" data-uri="${esc(uri)}" aria-label="播放 ${esc(item.Title || item.Name || "曲目")}">${icon("play-filled")}</button><span class="track-index">${String(index + 1).padStart(2, "0")}</span><div><b>${esc(item.Title || item.Name || "未知曲目")}</b><small>${esc([item.Artist || item.AlbumArtist, item.Album].filter(Boolean).join(" · "))}</small></div><time>${time(item.Duration || item.duration || 0)}</time>${action}</article>`;
   }).join("")}</div>` : empty(title, "换一个分类或搜索词试试");
   $$('[data-play-id]', $("#playerContent")).forEach(button => button.onclick = () => run(() => button.dataset.playId ? mpd.actions.playSong(button.dataset.playId) : mpd.actions.replaceUris([button.dataset.uri])));
   $$('[data-add-uri]', $("#playerContent")).forEach(button => button.onclick = () => run(() => mpd.actions.appendUris([button.dataset.addUri])));
@@ -227,7 +228,7 @@ async function addSelectionToPlaylist(plist, boxes) {
 }
 
 async function renderPlaylists() {
-  $(".player-content-head .play-all")?.remove();
+  { const playAll = $(".player-content-head .play-all"); if (playAll) playAll.remove(); }
   const lists = await mpd.playlists();
   $("#playerContent").innerHTML = lists.length ? `<div class="playlist-grid">${lists.map(item => { const plist = item.uri || item.Name || ""; const name = item.Name || item.Playlist || plist; return `<article class="playlist-card"><button data-plist="${esc(plist)}"><span>${icon("playlist")}</span><div><b>${esc(name || "未命名歌单")}</b><small>打开歌单</small></div>${icon("chevron-right")}</button></article>`; }).join("")}</div>` : empty("还没有歌单", "从曲库搜索歌曲后可创建第一个歌单");
   $$('[data-plist]', $("#playerContent")).forEach(button => button.onclick = async () => {
@@ -263,12 +264,12 @@ async function renderRadios(query) {
   $$('[data-radio]', $("#playerContent")).forEach(button => button.onclick = () => run(() => mpd.actions.replacePlaylist(mpd.radioPlaylistUri(button.dataset.radio))));
 }
 
-function addPlayAll(value, playlist) { const head = $(".player-content-head"); head.querySelector(".play-all")?.remove(); const button = document.createElement("button"); button.className = "play-all"; button.innerHTML = `${icon("play-filled")}播放全部`; button.onclick = () => run(() => playlist ? mpd.actions.replacePlaylist(value) : mpd.actions.replaceUris(value)); head.append(button); }
-async function playerAction(action) { const fn = action === "toggle" ? (model?.state === "play" ? mpd.actions.pause : mpd.actions.play) : mpd.actions[action]; if (fn) await run(fn); }
+function addPlayAll(value, playlist) { const head = $(".player-content-head"); const existing = head.querySelector(".play-all"); if (existing) existing.remove(); const button = document.createElement("button"); button.className = "play-all"; button.innerHTML = `${icon("play-filled")}播放全部`; button.onclick = () => run(() => playlist ? mpd.actions.replacePlaylist(value) : mpd.actions.replaceUris(value)); head.append(button); }
+async function playerAction(action) { const fn = action === "toggle" ? (model && model.state === "play" ? mpd.actions.pause : mpd.actions.play) : mpd.actions[action]; if (fn) await run(fn); }
 function currentPlaybackMode() {
-  if (model?.random) return "shuffle";
-  if (model?.single === "1") return "repeat-one";
-  if (model?.repeat) return "repeat-all";
+  if (model && model.random) return "shuffle";
+  if (model && model.single === "1") return "repeat-one";
+  if (model && model.repeat) return "repeat-all";
   return "order";
 }
 function syncPlaybackMode() {
@@ -314,11 +315,11 @@ function askPlaylistName(title, value) {
     dialog.className = "modal playlist-name-dialog";
     dialog.innerHTML = `<form class="dialog-card compact-dialog"><h2>${esc(title)}</h2><label><span>歌单名称</span><input name="playlistName" maxlength="200" value="${esc(value)}" required autocomplete="off"></label><div class="dialog-actions"><button type="button" class="secondary" data-cancel>取消</button><button class="accent-btn">确定</button></div></form>`;
     document.body.append(dialog);
-    const finish = result => { dialog.close(); dialog.remove(); resolve(result); };
+    const finish = result => { closeDialog(dialog); dialog.remove(); resolve(result); };
     $("[data-cancel]", dialog).onclick = () => finish("");
     $("form", dialog).onsubmit = event => { event.preventDefault(); finish(event.currentTarget.elements.playlistName.value.trim()); };
     dialog.addEventListener("cancel", event => { event.preventDefault(); finish(""); }, { once: true });
-    dialog.showModal();
+    openDialog(dialog);
     $("input", dialog).select();
   });
 }

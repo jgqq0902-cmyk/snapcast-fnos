@@ -1,8 +1,8 @@
-import { post, request } from "./js/api.js?v=20261002-ios";
-import { state } from "./js/store.js?v=20261002-ios";
-import { $, $$, closeDialog, openDialog, toast } from "./js/ui.js?v=20261002-ios";
-import { renderZones } from "./js/zones.js?v=20261002-ios";
-import { activatePlayer, resetPlayer, syncActiveSource } from "./js/player.js?v=20261002-ios";
+import { post, request } from "./js/api.js?v=20261002-ios2";
+import { state } from "./js/store.js?v=20261002-ios2";
+import { $, $$, closeDialog, openDialog, toast } from "./js/ui.js?v=20261002-ios2";
+import { renderZones } from "./js/zones.js?v=20261002-ios2";
+import { activatePlayer, resetPlayer, syncActiveSource } from "./js/player.js?v=20261002-ios2";
 
 let pollTimer;
 let bootstrapped = false;
@@ -80,12 +80,12 @@ async function refreshState() {
   if (!bootstrapped) return;
   try {
     const data = await request("/api/state");
-    state.sources = data.sources || data.snapcast?.streams || [];
+    state.sources = data.sources || (data.snapcast && data.snapcast.streams) || [];
     syncActiveSource(state.sources);
-    state.zones = data.zones || data.snapcast?.groups || [];
-    state.mainGroup = data.mainGroup || data.snapcast?.mainGroup || null;
+    state.zones = data.zones || (data.snapcast && data.snapcast.groups) || [];
+    state.mainGroup = data.mainGroup || (data.snapcast && data.snapcast.mainGroup) || null;
     state.system = { ...state.system, ...(data.system || {}) };
-    state.system.healthy = Boolean(state.system.ok) && !data.errors?.length;
+    state.system.healthy = Boolean(state.system.ok) && !(data.errors && data.errors.length);
     $("#dashboard").setAttribute("aria-busy", "false");
     $("#healthLamp").classList.toggle("ok", state.system.healthy);
     $("#healthText").textContent = state.system.healthy ? "系统正常" : "部分服务异常";
@@ -130,7 +130,7 @@ function initEvents() {
   $("#loginForm").onsubmit = login;
   $("#loginDialog").addEventListener("cancel", event => event.preventDefault());
   $("#loginDialog").addEventListener("close", () => {
-    if (state.auth.enabled && !state.auth.authenticated) queueMicrotask(openLogin);
+    if (state.auth.enabled && !state.auth.authenticated) Promise.resolve().then(openLogin);
   });
   $("#refreshRooms").onclick = refreshState;
   $("#logoutButton").onclick = logout;
@@ -149,15 +149,15 @@ function installMobileGestureGuard() {
   document.addEventListener("pointerup", event => {
     if (!gesture || event.pointerType !== "touch") return;
     if (gesture.moved) {
-      const interactive = gesture.target.closest?.("button, a, summary, input[type=range], .speaker-toggle");
+      const interactive = gesture.target.closest ? gesture.target.closest("button, a, summary, input[type=range], .speaker-toggle") : null;
       if (interactive) interactive.dataset.ignoreTouchClickUntil = String(performance.now() + 450);
     }
     gesture = null;
   }, { capture: true, passive: true });
   document.addEventListener("pointercancel", () => { gesture = null; }, { capture: true, passive: true });
   document.addEventListener("click", event => {
-    const interactive = event.target.closest?.("button, a, summary, input[type=range], .speaker-toggle");
-    if (Number(interactive?.dataset.ignoreTouchClickUntil || 0) <= performance.now()) return;
+    const interactive = event.target.closest ? event.target.closest("button, a, summary, input[type=range], .speaker-toggle") : null;
+    if (Number((interactive && interactive.dataset.ignoreTouchClickUntil) || 0) <= performance.now()) return;
     event.preventDefault();
     event.stopImmediatePropagation();
   }, true);

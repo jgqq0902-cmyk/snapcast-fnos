@@ -26,11 +26,11 @@ export async function call(method, params = {}) {
 }
 
 export function connectNotifications(onUpdate, onState) {
-  const events = new EventSource(EVENTS_URL, { withCredentials: true });
-  const receive = event => { try { onUpdate?.(JSON.parse(event.data)); } catch { onUpdate?.({}); } };
-  events.onopen = () => onState?.(true);
+  const events = new EventSource(EVENTS_URL);
+  const receive = event => { try { if (onUpdate) onUpdate(JSON.parse(event.data)); } catch { if (onUpdate) onUpdate({}); } };
+  events.onopen = () => { if (onState) onState(true); };
   events.addEventListener("update", receive);
-  events.onerror = () => onState?.(false);
+  events.onerror = () => { if (onState) onState(false); };
   return () => events.close();
 }
 
@@ -50,8 +50,8 @@ export async function getPlayer() {
 export function normalizePlayer(status = {}, song = {}) {
   const uri = song.uri || song.Uri || "";
   return {
-    state: status.state || "stop", volume: Number(status.volume ?? 0), elapsed: Number(status.elapsedTime ?? status.elapsed ?? 0),
-    duration: Number(status.totalTime ?? song.Duration ?? song.duration ?? 0), currentSongId: Number(status.currentSongId ?? song.id ?? -1),
+    state: status.state || "stop", volume: Number(status.volume === null || status.volume === undefined ? 0 : status.volume), elapsed: Number(status.elapsedTime === null || status.elapsedTime === undefined ? (status.elapsed === null || status.elapsed === undefined ? 0 : status.elapsed) : status.elapsedTime),
+    duration: Number(status.totalTime === null || status.totalTime === undefined ? (song.Duration === null || song.Duration === undefined ? (song.duration === null || song.duration === undefined ? 0 : song.duration) : song.Duration) : status.totalTime), currentSongId: Number(status.currentSongId === null || status.currentSongId === undefined ? (song.id === null || song.id === undefined ? -1 : song.id) : status.currentSongId),
     random: mpdBoolean(status.random), repeat: mpdBoolean(status.repeat), single: mpdBoolean(status.single) ? "1" : "0",
     song: { uri, title: radioNames.get(normalizeUri(uri)) || readableTitle(song, uri), artist: song.Artist || song.AlbumArtist || "", album: song.Album || "" },
     cover: uri ? `/api/player/art?size=large&uri=${encodeURIComponent(uri)}` : "/art/album-placeholder.svg",
@@ -122,8 +122,8 @@ export function coverFor(item, radio = false) {
   const uri = item.FirstSongUri || item.uri || item.Uri || "";
   return uri ? `/api/player/art?size=small&uri=${encodeURIComponent(uri)}` : "/art/album-placeholder.svg";
 }
-export function rewriteAsset(uri) { return uri?.startsWith("/albumart") ? `/api/player/art?source=${encodeURIComponent(uri)}` : "/art/radio-placeholder.svg"; }
-function escapeMpd(value) { return String(value).replaceAll("\\", "\\\\").replaceAll("'", "\\'"); }
+export function rewriteAsset(uri) { return uri && uri.startsWith("/albumart") ? `/api/player/art?source=${encodeURIComponent(uri)}` : "/art/radio-placeholder.svg"; }
+function escapeMpd(value) { return String(value).replace(/\\/g, "\\\\").replace(/'/g, "\\'"); }
 function fileName(uri) { return decodeURIComponent(String(uri).split("/").pop() || "").replace(/\.[^.]+$/, ""); }
 function isWebUri(value) { return /^https?:\/\//i.test(String(value || "")); }
 function normalizeUri(value) { return String(value || "").trim().replace(/\/$/, ""); }
@@ -133,7 +133,7 @@ function readableTitle(song, uri) {
 }
 function rememberRadioNames(items) {
   items.forEach(item => {
-    if (item?.StreamUri && item?.Name) radioNames.set(normalizeUri(item.StreamUri), item.Name);
+    if (item && item.StreamUri && item.Name) radioNames.set(normalizeUri(item.StreamUri), item.Name);
   });
 }
 async function loadRadioNames() {

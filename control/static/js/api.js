@@ -13,8 +13,8 @@ export async function request(url, options = {}) {
   if (response.status === 401 && url !== "/api/login") {
     document.dispatchEvent(new CustomEvent("auth-required"));
   }
-  if (!response.ok || data?.ok === false) {
-    throw new ApiError(data?.error || `HTTP ${response.status}`, response.status, typeof data === "object" ? data : null);
+  if (!response.ok || (data && data.ok === false)) {
+    throw new ApiError((data && data.error) || `HTTP ${response.status}`, response.status, typeof data === "object" ? data : null);
   }
   return data;
 }

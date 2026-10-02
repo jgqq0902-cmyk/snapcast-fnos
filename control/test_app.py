@@ -491,12 +491,12 @@ class ProductionConfigTest(unittest.TestCase):
         self.assertNotIn('class="more-menu"', index)
         self.assertIn('clearPrivateState', app)
         self.assertIn('addEventListener("cancel", event => event.preventDefault())', app)
-        self.assertIn('queueMicrotask(openLogin)', app)
+        self.assertIn('Promise.resolve().then(openLogin)', app)
         self.assertNotIn('{ once: true }', app.split('addEventListener("cancel"', 1)[1].split(";", 1)[0])
 
     def test_frontend_module_graph_uses_one_cache_version(self):
         static = Path(__file__).parent / "static"
-        version = "20261002-ios"
+        version = "20261002-ios2"
         index = (static / "index.html").read_text(encoding="utf-8")
         app = (static / "app.js").read_text(encoding="utf-8")
         zones = (static / "js" / "zones.js").read_text(encoding="utf-8")
@@ -509,6 +509,17 @@ class ProductionConfigTest(unittest.TestCase):
                 self.assertIn(f"?v={version}", line)
         self.assertIn('dataset.consoleBoot = "ready"', app)
         self.assertIn("控制台脚本未能启动", watchdog)
+
+    def test_frontend_startup_is_legacy_safari_parseable(self):
+        static = Path(__file__).parent / "static"
+        sources = "\n".join(path.read_text(encoding="utf-8") for path in (
+            static / "app.js", *(static / "js").glob("*.js")
+        ))
+        for unsupported in ("?.", "??", "replaceAll(", "queueMicrotask("):
+            self.assertNotIn(unsupported, sources)
+        ui = (static / "js" / "ui.js").read_text(encoding="utf-8")
+        self.assertIn('typeof dialog.showModal === "function"', ui)
+        self.assertIn('dialog.setAttribute("open", "")', ui)
 
     def test_frontend_has_complete_device_states_and_user_facing_copy(self):
         static = Path(__file__).parent / "static"

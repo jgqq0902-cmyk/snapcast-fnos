@@ -1,7 +1,7 @@
 export const $ = (selector, root = document) => root.querySelector(selector);
 export const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 export const icon = name => `<svg aria-hidden="true"><use href="/icons.svg#icon-${name}"/></svg>`;
-export const esc = value => String(value ?? "").replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
+export const esc = value => String(value === null || value === undefined ? "" : value).replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
 
 export function installThumbDragRange(input) {
   if (!input || input.closest(".thumb-only-range")) return;
@@ -56,7 +56,7 @@ export function installThumbDragRange(input) {
     } else if (input.value !== initialValue) {
       input.dispatchEvent(new Event("change", { bubbles: true }));
     }
-    if (event?.pointerId !== undefined && handle.hasPointerCapture(event.pointerId)) handle.releasePointerCapture(event.pointerId);
+    if (event && event.pointerId !== undefined && handle.hasPointerCapture && handle.hasPointerCapture(event.pointerId)) handle.releasePointerCapture(event.pointerId);
   };
   handle.addEventListener("pointerup", finish);
   handle.addEventListener("pointercancel", finish);
@@ -67,7 +67,7 @@ export function installThumbDragRange(input) {
 }
 
 export function syncThumbDragRange(input) {
-  input?.dispatchEvent(new Event("thumb-sync"));
+  if (input) input.dispatchEvent(new Event("thumb-sync"));
 }
 let toastTimer;
 export function toast(message, error = false, duration = 2800) {
@@ -80,12 +80,23 @@ export function toast(message, error = false, duration = 2800) {
 
 export function openDialog(selector) {
   const dialog = typeof selector === "string" ? $(selector) : selector;
-  if (dialog && !dialog.open) dialog.showModal();
+  if (!dialog || dialog.open || dialog.hasAttribute("open")) return;
+  if (typeof dialog.showModal === "function") dialog.showModal();
+  else {
+    dialog.setAttribute("open", "");
+    dialog.setAttribute("aria-modal", "true");
+  }
 }
 
 export function closeDialog(selector) {
   const dialog = typeof selector === "string" ? $(selector) : selector;
-  if (dialog?.open) dialog.close();
+  if (!dialog || (!dialog.open && !dialog.hasAttribute("open"))) return;
+  if (typeof dialog.close === "function") dialog.close();
+  else {
+    dialog.removeAttribute("open");
+    dialog.removeAttribute("aria-modal");
+    dialog.dispatchEvent(new Event("close"));
+  }
 }
 
 export function askConfirm(title, message) {
@@ -95,7 +106,7 @@ export function askConfirm(title, message) {
     $("#confirmMessage").textContent = message;
     $("#confirmForm").onsubmit = event => {
       event.preventDefault();
-      dialog.close();
+      closeDialog(dialog);
       resolve(true);
     };
     dialog.addEventListener("close", () => resolve(false), { once: true });

@@ -1,19 +1,19 @@
-import { post } from "./api.js?v=20261002-ios";
-import { state } from "./store.js?v=20261002-ios";
-import { $, $$, esc, icon, installThumbDragRange, syncThumbDragRange, toast } from "./ui.js?v=20261002-ios";
+import { post } from "./api.js?v=20261002-ios2";
+import { state } from "./store.js?v=20261002-ios2";
+import { $, $$, closeDialog, esc, icon, installThumbDragRange, openDialog, syncThumbDragRange, toast } from "./ui.js?v=20261002-ios2";
 
 let renderSignature = "";
 
 export function renderZones(force = false) {
-  const clients = state.mainGroup?.clients || [];
+  const clients = (state.mainGroup && state.mainGroup.clients) || [];
   $("#deviceCount").textContent = clients.length;
   const signature = JSON.stringify({
-    groupId: state.mainGroup?.id || "",
+    groupId: (state.mainGroup && state.mainGroup.id) || "",
     clients: clients.map(client => ({
       id: client.id,
       name: client.name,
       connected: Boolean(client.connected),
-      active: Boolean(client.participating ?? client.active ?? !client.muted),
+      active: Boolean(client.participating !== null && client.participating !== undefined ? client.participating : (client.active !== null && client.active !== undefined ? client.active : !client.muted)),
       audible: Boolean(client.audible),
       volume: Number(client.volume),
       latency: Number(client.latency),
@@ -44,7 +44,7 @@ function devicesPanel(zone) {
 }
 
 function clientCard(client, index) {
-  const active = client.participating ?? client.active ?? !client.muted;
+  const active = client.participating !== null && client.participating !== undefined ? client.participating : (client.active !== null && client.active !== undefined ? client.active : !client.muted);
   const card = document.createElement("article");
   const variant = speakerVariant(client.name, client.id, index);
   card.className = `speaker-unit${client.connected ? "" : " is-offline"}${active ? " is-active" : " is-inactive"}${client.audible ? " is-audible" : ""}`;
@@ -59,8 +59,8 @@ function clientCard(client, index) {
   $(".speaker-toggle", card).onclick = () => mutate("/api/snapcast/client-active", { clientId: client.id, active: !active }, true);
   const dialog = $(".device-dialog", card);
   dialog.addEventListener("close", () => renderZones(true));
-  $(".speaker-settings", card).onclick = () => dialog.showModal();
-  $(".dialog-close", card).onclick = () => dialog.close();
+  $(".speaker-settings", card).onclick = () => openDialog(dialog);
+  $(".dialog-close", card).onclick = () => closeDialog(dialog);
   $(".edit-device-name", dialog).onclick = () => {
     $(".device-name-display", dialog).hidden = true;
     $(".device-identity label", dialog).hidden = false;
@@ -72,7 +72,7 @@ function clientCard(client, index) {
   $("form", dialog).onsubmit = async event => {
     event.preventDefault();
     const name = $(".device-name", dialog).value.trim();
-    if (name && await mutate("/api/snapcast/client-name", { clientId: client.id, name }, true)) dialog.close();
+    if (name && await mutate("/api/snapcast/client-name", { clientId: client.id, name }, true)) closeDialog(dialog);
   };
   const volume = $(".device-volume-control input", card), volumeOutput = $(".device-volume-control output", card);
   volume.oninput = () => { volumeOutput.value = volume.value; };
