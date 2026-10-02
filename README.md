@@ -56,6 +56,7 @@ chmod 600 .env
 2. 编辑 `.env`：
 
 - `GATEWAY_IP`、`LAN_SUBNET`、`LAN_GATEWAY`、`MACVLAN_PARENT` 必须匹配实际 LAN。
+- `GATEWAY_MAC_ADDRESS` 必须是当前二层网络内唯一且保持不变的本地管理 MAC。固定它可避免容器重建后手机仍缓存旧 ARP，表现为 Android 首次打开很慢或 iOS 提示服务器停止响应。示例值仅适用于示例地址；迁移到其他网络时应生成并固定一个新值。
 - `DLNA_RELAY_ALLOWED_LAN_CIDRS` 必须列出允许 DLNA 拉流的家庭 LAN 网段，多个网段以逗号分隔；loopback、link-local、multicast、未指定地址、网关自身及未列入白名单的私网地址始终拒绝，每次 HTTP 重定向也会重新校验。
 - `CONFIG_DIR`、`DATA_DIR`、`CERTS_DIR` 和 `MEDIA_ROOT` 指向宿主持久化目录；默认前三项使用项目内相对路径。
 - `CONTROL_PASSWORD` 必须改为较长且唯一的密码，不要提交 `.env`。

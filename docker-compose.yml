@@ -34,6 +34,7 @@ services:
       audio_lan:
         interface_name: eth0
         ipv4_address: ${GATEWAY_IP:?copy .env.example to .env and set GATEWAY_IP}
+        mac_address: ${GATEWAY_MAC_ADDRESS:?set a unique, stable locally administered MAC address}
     healthcheck:
       test: ["CMD", "/bin/sh", "/app/unified/healthcheck.sh"]
       interval: 10s
