@@ -499,7 +499,7 @@ class ProductionConfigTest(unittest.TestCase):
     def test_frontend_module_graph_uses_one_cache_version(self):
         static = Path(__file__).parent / "static"
         source_version = "20261002-ios2"
-        bundle_version = "20261002-ios12modal"
+        bundle_version = "20261002-ios12dom"
         index = (static / "index.html").read_text(encoding="utf-8")
         app = (static / "app.js").read_text(encoding="utf-8")
         bundle = (static / "app.bundle.js").read_text(encoding="utf-8")
@@ -524,10 +524,11 @@ class ProductionConfigTest(unittest.TestCase):
         sources = "\n".join(path.read_text(encoding="utf-8") for path in (
             static / "app.js", *(static / "js").glob("*.js")
         ))
-        for unsupported in ("?.", "??", "replaceAll(", "queueMicrotask("):
+        for unsupported in ("?.", "??", "replaceAll(", "replaceChildren(", "queueMicrotask("):
             self.assertNotIn(unsupported, sources)
         ui = (static / "js" / "ui.js").read_text(encoding="utf-8")
         self.assertNotIn("showModal", ui)
+        self.assertIn("while (node.firstChild) node.removeChild(node.firstChild)", ui)
         self.assertIn('dialog.setAttribute("open", "")', ui)
         index = (static / "index.html").read_text(encoding="utf-8")
         self.assertNotIn("<dialog", index)

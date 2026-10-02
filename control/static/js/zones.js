@@ -1,6 +1,6 @@
 import { post } from "./api.js?v=20261002-ios2";
 import { state } from "./store.js?v=20261002-ios2";
-import { $, $$, closeDialog, esc, icon, installThumbDragRange, openDialog, syncThumbDragRange, toast } from "./ui.js?v=20261002-ios2";
+import { $, $$, clearChildren, closeDialog, esc, icon, installThumbDragRange, openDialog, syncThumbDragRange, toast } from "./ui.js?v=20261002-ios2";
 
 let renderSignature = "";
 
@@ -23,7 +23,7 @@ export function renderZones(force = false) {
   if ($("#devicePanelHost dialog[open]")) return;
   renderSignature = signature;
   const host = $("#devicePanelHost");
-  host.replaceChildren();
+  clearChildren(host);
   if (!state.mainGroup) {
     host.innerHTML = `<section class="state-panel"><svg class="state-mark" aria-hidden="true"><use href="/icons.svg#icon-speaker"/></svg><h2>暂未发现设备</h2><div class="state-actions"><button class="secondary-btn" data-empty-refresh>刷新</button></div></section>`;
     $("[data-empty-refresh]", host).onclick = () => document.dispatchEvent(new CustomEvent("state-refresh"));

@@ -3,6 +3,11 @@ export const $$ = (selector, root = document) => [...root.querySelectorAll(selec
 export const icon = name => `<svg aria-hidden="true"><use href="/icons.svg#icon-${name}"/></svg>`;
 export const esc = value => String(value === null || value === undefined ? "" : value).replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
 
+export function clearChildren(node) {
+  if (!node) return;
+  while (node.firstChild) node.removeChild(node.firstChild);
+}
+
 export function installThumbDragRange(input) {
   if (!input || input.closest(".thumb-only-range")) return;
   input.dataset.thumbDrag = "ready";
