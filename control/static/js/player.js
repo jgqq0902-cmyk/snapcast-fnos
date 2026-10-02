@@ -1,5 +1,5 @@
-import * as mpd from "./mympd-adapter.js?v=20260928-sync";
-import { $, $$, askConfirm, esc, icon, installThumbDragRange, syncThumbDragRange, toast } from "./ui.js";
+import * as mpd from "./mympd-adapter.js?v=20261002-ios";
+import { $, $$, askConfirm, esc, icon, installThumbDragRange, syncThumbDragRange, toast } from "./ui.js?v=20261002-ios";
 
 let initialized = false, activeView = "now", requestedView, model, refreshTimer, searchTimer, disconnectSocket;
 let externalSourceActive = null;

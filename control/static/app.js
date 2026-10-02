@@ -1,13 +1,14 @@
-import { post, request } from "./js/api.js";
-import { state } from "./js/store.js";
-import { $, $$, closeDialog, openDialog, toast } from "./js/ui.js";
-import { renderZones } from "./js/zones.js?v=20261001-thumb";
-import { activatePlayer, resetPlayer, syncActiveSource } from "./js/player.js?v=20261001-thumb";
+import { post, request } from "./js/api.js?v=20261002-ios";
+import { state } from "./js/store.js?v=20261002-ios";
+import { $, $$, closeDialog, openDialog, toast } from "./js/ui.js?v=20261002-ios";
+import { renderZones } from "./js/zones.js?v=20261002-ios";
+import { activatePlayer, resetPlayer, syncActiveSource } from "./js/player.js?v=20261002-ios";
 
 let pollTimer;
 let bootstrapped = false;
 
 async function start() {
+  document.documentElement.dataset.consoleBoot = "starting";
   initEvents();
   await checkAuth();
 }
@@ -20,6 +21,7 @@ async function checkAuth() {
     $("#logoutButton").hidden = !state.auth.enabled;
     if (state.auth.enabled && (!state.auth.configured || !state.auth.authenticated)) {
       if (!state.auth.configured) $("#loginHint").textContent = "服务端尚未设置 CONTROL_PASSWORD，请先完成部署配置。";
+      document.documentElement.dataset.consoleBoot = "auth";
       openLogin();
       return false;
     }
@@ -27,9 +29,11 @@ async function checkAuth() {
     bootstrapped = true;
     await refreshState();
     await activatePlayer();
+    document.documentElement.dataset.consoleBoot = "ready";
     startPolling();
     return true;
   } catch (error) {
+    document.documentElement.dataset.consoleBoot = "failed";
     toast(error.message, true);
     return false;
   }

@@ -491,6 +491,22 @@ class ProductionConfigTest(unittest.TestCase):
         self.assertIn('queueMicrotask(openLogin)', app)
         self.assertNotIn('{ once: true }', app.split('addEventListener("cancel"', 1)[1].split(";", 1)[0])
 
+    def test_frontend_module_graph_uses_one_cache_version(self):
+        static = Path(__file__).parent / "static"
+        version = "20261002-ios"
+        index = (static / "index.html").read_text(encoding="utf-8")
+        app = (static / "app.js").read_text(encoding="utf-8")
+        zones = (static / "js" / "zones.js").read_text(encoding="utf-8")
+        player = (static / "js" / "player.js").read_text(encoding="utf-8")
+        watchdog = (static / "js" / "bootstrap-watchdog.js").read_text(encoding="utf-8")
+        self.assertIn(f'app.js?v={version}', index)
+        self.assertIn(f'bootstrap-watchdog.js?v={version}', index)
+        for source in (app, zones, player):
+            for line in (line for line in source.splitlines() if line.startswith("import ")):
+                self.assertIn(f"?v={version}", line)
+        self.assertIn('dataset.consoleBoot = "ready"', app)
+        self.assertIn("控制台脚本未能启动", watchdog)
+
     def test_frontend_has_complete_device_states_and_user_facing_copy(self):
         static = Path(__file__).parent / "static"
         sources = "\n".join(path.read_text(encoding="utf-8") for path in (

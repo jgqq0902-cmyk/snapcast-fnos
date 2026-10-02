@@ -1,6 +1,6 @@
-import { post } from "./api.js";
-import { state } from "./store.js";
-import { $, $$, esc, icon, installThumbDragRange, syncThumbDragRange, toast } from "./ui.js";
+import { post } from "./api.js?v=20261002-ios";
+import { state } from "./store.js?v=20261002-ios";
+import { $, $$, esc, icon, installThumbDragRange, syncThumbDragRange, toast } from "./ui.js?v=20261002-ios";
 
 let renderSignature = "";
 
