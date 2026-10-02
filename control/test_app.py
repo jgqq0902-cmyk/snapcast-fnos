@@ -479,7 +479,7 @@ class ProductionConfigTest(unittest.TestCase):
         self.assertNotIn('<span>退出登录</span>', index)
         self.assertIn('aria-labelledby="loginTitle"', index)
         self.assertIn('aria-live="polite"', index)
-        self.assertIn('app.js?v=', index)
+        self.assertIn('app.bundle.js?v=', index)
         self.assertIn('class="speaker-toggle"', zones)
         self.assertIn('class="speaker-settings"', zones)
         self.assertIn('class="edit-device-name"', zones)
@@ -496,18 +496,23 @@ class ProductionConfigTest(unittest.TestCase):
 
     def test_frontend_module_graph_uses_one_cache_version(self):
         static = Path(__file__).parent / "static"
-        version = "20261002-ios2"
+        source_version = "20261002-ios2"
+        bundle_version = "20261002-ios12"
         index = (static / "index.html").read_text(encoding="utf-8")
         app = (static / "app.js").read_text(encoding="utf-8")
+        bundle = (static / "app.bundle.js").read_text(encoding="utf-8")
         zones = (static / "js" / "zones.js").read_text(encoding="utf-8")
         player = (static / "js" / "player.js").read_text(encoding="utf-8")
         watchdog = (static / "js" / "bootstrap-watchdog.js").read_text(encoding="utf-8")
-        self.assertIn(f'app.js?v={version}', index)
-        self.assertIn(f'bootstrap-watchdog.js?v={version}', index)
+        self.assertIn(f'app.bundle.js?v={bundle_version}', index)
+        self.assertIn(f'bootstrap-watchdog.js?v={bundle_version}', index)
+        self.assertNotIn('type="module"', index)
         for source in (app, zones, player):
             for line in (line for line in source.splitlines() if line.startswith("import ")):
-                self.assertIn(f"?v={version}", line)
+                self.assertIn(f"?v={source_version}", line)
         self.assertIn('dataset.consoleBoot = "ready"', app)
+        self.assertIn('dataset.consoleBoot = "ready"', bundle)
+        self.assertNotIn("import ", bundle)
         self.assertIn("控制台脚本未能启动", watchdog)
 
     def test_frontend_startup_is_legacy_safari_parseable(self):

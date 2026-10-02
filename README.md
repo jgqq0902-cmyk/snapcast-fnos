@@ -148,7 +148,7 @@ docker compose up -d --remove-orphans --wait --wait-timeout 180
 
 ## Web 结构
 
-1781 的 Snap / Room 控制台采用原生 ES Modules。首页左侧直接承载完整的五标签 myMPD 播放器，右侧显示精简设备控制，移动端自动改为单列：
+1781 的 Snap / Room 控制台以原生 ES Modules 维护源码，并发布为兼容 Safari 12 的本地单文件脚本。首页左侧直接承载完整的五标签 myMPD 播放器，右侧显示精简设备控制，移动端自动改为单列：
 
 - `control/static/js/`：设备状态、播放进度、受限 myMPD JSON-RPC/SSE 适配器与播放器 UI
 - `control/static/styles/`：令牌、基础、双栏设备页、流体光域播放器与响应式样式
@@ -156,7 +156,7 @@ docker compose up -d --remove-orphans --wait --wait-timeout 180
 
 控制服务会把所有 Snapclient 幂等收敛到唯一“主播放组”，并由 API 显式返回 `mainGroup`。Snapcast Group 仅作为底层传输拓扑，不用于表达房间或场景；设备是否参与播放通过静音映射实现，并保留原音量和延迟。控制页和控制 API 均不暴露底层 AirPlay、DLNA、Default 流切换，主组会持续校准到 `Default`，让 AirPlay 自动优先于 MPD/DLNA。音源音量直接控制 MPD 软件混音器，AirPlay 音量由发送端控制。AirPlay 实际播放时左侧显示外部音源提示并禁用后台 MPD transport；曲库、队列、歌单和电台仍可浏览。MPD/DLNA 显示平滑进度，时长已知的本地或远程音频支持跳转；AirPlay 和直播流不会显示虚假可拖动进度。
 
-首页使用一个原生 ES Modules 播放器实例，通过同源 `/api/player/rpc`、`/api/player/art` 与 `/api/player/events` 使用 myMPD 的允许列表能力。五个标签依次为播放、队列、歌单、电台、曲库并默认打开播放。曲库搜索结果支持多选或全选后加入已有/新建歌单；歌单支持重命名、删除、移除及调整曲目顺序；队列可由 myMPD 从曲库随机生成 50 首。所有数据与操作均由 myMPD 提供，前端不建立第二套曲库或歌单存储。完整 myMPD 管理界面不再代理到 LAN，仅能在容器 loopback 内排障。
+首页使用一个由 ES Modules 构建的播放器实例，通过同源 `/api/player/rpc`、`/api/player/art` 与 `/api/player/events` 使用 myMPD 的允许列表能力。修改 `control/static/app.js` 或其依赖后必须运行 `sh control/build-frontend.sh` 更新已提交的 `app.bundle.js`；FNOS 运行时不需要 Node。五个标签依次为播放、队列、歌单、电台、曲库并默认打开播放。曲库搜索结果支持多选或全选后加入已有/新建歌单；歌单支持重命名、删除、移除及调整曲目顺序；队列可由 myMPD 从曲库随机生成 50 首。所有数据与操作均由 myMPD 提供，前端不建立第二套曲库或歌单存储。完整 myMPD 管理界面不再代理到 LAN，仅能在容器 loopback 内排障。
 
 设备页的“立即停止”会停止 MPD（保留队列）并断开当前 AirPlay 会话，不会修改任何设备的音量、静音、延迟或播放组。AirPlay 优先使用 Shairport Sync 的 D-Bus `DropSession`；接口不可用时由固定的无参数辅助脚本终止接收进程，Supervisor 随即恢复接收服务。
 
