@@ -1,6 +1,13 @@
 (function () {
   "use strict";
 
+  function report(stage) {
+    var image = new Image();
+    image.src = "/art/compat-probe.svg?stage=" + encodeURIComponent(stage) + "&t=" + Date.now();
+  }
+
+  window.__snapProbe = report;
+  report("watchdog-start");
   document.documentElement.dataset.consoleBoot = "loading";
   var bootError = "";
   window.addEventListener("error", function (event) {
@@ -11,6 +18,7 @@
   window.setTimeout(function () {
     var state = document.documentElement.dataset.consoleBoot;
     if (state === "ready" || state === "auth") return;
+    report("watchdog-timeout-" + (state || "unset"));
 
     var health = document.getElementById("healthText");
     var engine = document.querySelector("#playerEngineState span");

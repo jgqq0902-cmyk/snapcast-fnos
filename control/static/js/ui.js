@@ -80,23 +80,16 @@ export function toast(message, error = false, duration = 2800) {
 
 export function openDialog(selector) {
   const dialog = typeof selector === "string" ? $(selector) : selector;
-  if (!dialog || dialog.open || dialog.hasAttribute("open")) return;
-  if (typeof dialog.showModal === "function") dialog.showModal();
-  else {
-    dialog.setAttribute("open", "");
-    dialog.setAttribute("aria-modal", "true");
-  }
+  if (!dialog || dialog.hasAttribute("open")) return;
+  dialog.setAttribute("open", "");
+  dialog.setAttribute("aria-modal", "true");
 }
 
 export function closeDialog(selector) {
   const dialog = typeof selector === "string" ? $(selector) : selector;
-  if (!dialog || (!dialog.open && !dialog.hasAttribute("open"))) return;
-  if (typeof dialog.close === "function") dialog.close();
-  else {
-    dialog.removeAttribute("open");
-    dialog.removeAttribute("aria-modal");
-    dialog.dispatchEvent(new Event("close"));
-  }
+  if (!dialog || !dialog.hasAttribute("open")) return;
+  dialog.removeAttribute("open");
+  dialog.dispatchEvent(new Event("close"));
 }
 
 export function askConfirm(title, message) {

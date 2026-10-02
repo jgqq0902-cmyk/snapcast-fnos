@@ -267,6 +267,8 @@ class ProductionConfigTest(unittest.TestCase):
         self.assertIn("location = /api/login", config)
         self.assertIn("location = /api/player/events", config)
         self.assertIn("proxy_buffering off", config)
+        self.assertIn("access.log snaproom", config)
+        self.assertIn("$http_user_agent", config)
         self.assertNotIn("location /player/", config)
         self.assertNotIn("__MYMPD_PORT__", config)
         self.assertNotIn("proxy_set_header Upgrade", config)
@@ -497,7 +499,7 @@ class ProductionConfigTest(unittest.TestCase):
     def test_frontend_module_graph_uses_one_cache_version(self):
         static = Path(__file__).parent / "static"
         source_version = "20261002-ios2"
-        bundle_version = "20261002-ios12"
+        bundle_version = "20261002-ios12modal"
         index = (static / "index.html").read_text(encoding="utf-8")
         app = (static / "app.js").read_text(encoding="utf-8")
         bundle = (static / "app.bundle.js").read_text(encoding="utf-8")
@@ -514,6 +516,8 @@ class ProductionConfigTest(unittest.TestCase):
         self.assertIn('dataset.consoleBoot = "ready"', bundle)
         self.assertNotIn("import ", bundle)
         self.assertIn("控制台脚本未能启动", watchdog)
+        self.assertIn('report("watchdog-start")', watchdog)
+        self.assertIn('__snapProbe("app-start")', app)
 
     def test_frontend_startup_is_legacy_safari_parseable(self):
         static = Path(__file__).parent / "static"
@@ -523,8 +527,11 @@ class ProductionConfigTest(unittest.TestCase):
         for unsupported in ("?.", "??", "replaceAll(", "queueMicrotask("):
             self.assertNotIn(unsupported, sources)
         ui = (static / "js" / "ui.js").read_text(encoding="utf-8")
-        self.assertIn('typeof dialog.showModal === "function"', ui)
+        self.assertNotIn("showModal", ui)
         self.assertIn('dialog.setAttribute("open", "")', ui)
+        index = (static / "index.html").read_text(encoding="utf-8")
+        self.assertNotIn("<dialog", index)
+        self.assertIn('id="loginDialog" class="modal" role="dialog" aria-modal="true" open', index)
 
     def test_frontend_has_complete_device_states_and_user_facing_copy(self):
         static = Path(__file__).parent / "static"

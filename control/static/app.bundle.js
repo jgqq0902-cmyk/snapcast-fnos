@@ -1,4 +1,21 @@
 (() => {
+  var __defProp = Object.defineProperty;
+  var __getOwnPropSymbols = Object.getOwnPropertySymbols;
+  var __hasOwnProp = Object.prototype.hasOwnProperty;
+  var __propIsEnum = Object.prototype.propertyIsEnumerable;
+  var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
+  var __spreadValues = (a, b) => {
+    for (var prop in b || (b = {}))
+      if (__hasOwnProp.call(b, prop))
+        __defNormalProp(a, prop, b[prop]);
+    if (__getOwnPropSymbols)
+      for (var prop of __getOwnPropSymbols(b)) {
+        if (__propIsEnum.call(b, prop))
+          __defNormalProp(a, prop, b[prop]);
+      }
+    return a;
+  };
+
   // control/static/js/api.js?v=20261002-ios2
   var ApiError = class extends Error {
     constructor(message, status = 0, details = null) {
@@ -8,7 +25,7 @@
     }
   };
   async function request(url, options = {}) {
-    const response = await fetch(url, { credentials: "same-origin", ...options });
+    const response = await fetch(url, __spreadValues({ credentials: "same-origin" }, options));
     const type = response.headers.get("content-type") || "";
     const data = type.includes("json") ? await response.json() : await response.text();
     if (response.status === 401 && url !== "/api/login") {
@@ -119,22 +136,15 @@
   }
   function openDialog(selector) {
     const dialog = typeof selector === "string" ? $(selector) : selector;
-    if (!dialog || dialog.open || dialog.hasAttribute("open")) return;
-    if (typeof dialog.showModal === "function") dialog.showModal();
-    else {
-      dialog.setAttribute("open", "");
-      dialog.setAttribute("aria-modal", "true");
-    }
+    if (!dialog || dialog.hasAttribute("open")) return;
+    dialog.setAttribute("open", "");
+    dialog.setAttribute("aria-modal", "true");
   }
   function closeDialog(selector) {
     const dialog = typeof selector === "string" ? $(selector) : selector;
-    if (!dialog || !dialog.open && !dialog.hasAttribute("open")) return;
-    if (typeof dialog.close === "function") dialog.close();
-    else {
-      dialog.removeAttribute("open");
-      dialog.removeAttribute("aria-modal");
-      dialog.dispatchEvent(new Event("close"));
-    }
+    if (!dialog || !dialog.hasAttribute("open")) return;
+    dialog.removeAttribute("open");
+    dialog.dispatchEvent(new Event("close"));
   }
   function askConfirm(title, message) {
     return new Promise((resolve) => {
@@ -195,7 +205,7 @@
     const card = document.createElement("article");
     const variant = speakerVariant(client.name, client.id, index);
     card.className = "speaker-unit".concat(client.connected ? "" : " is-offline").concat(active ? " is-active" : " is-inactive").concat(client.audible ? " is-audible" : "");
-    card.innerHTML = '<button class="speaker-toggle" aria-label="'.concat(esc(client.name)).concat(active ? "关闭" : "激活", '" ').concat(client.connected ? "" : "disabled", '><span class="speaker-visual ').concat(variant, '" aria-hidden="true"><i></i><i></i><i></i></span><strong>').concat(esc(client.name), '</strong><span class="speaker-light" aria-hidden="true"></span></button>\n    <button class="speaker-settings" aria-label="打开 ').concat(esc(client.name), ' 设置">').concat(icon("settings"), '</button>\n    <dialog class="device-dialog modal" aria-label="').concat(esc(client.name), ' 设置"><form class="device-dialog-card">\n      <header><div class="speaker-mini ').concat(variant, '" aria-hidden="true"><i></i></div><div class="device-identity"><span>设备名称</span><strong class="device-name-display">').concat(esc(client.name), '</strong><label hidden><input class="device-name" maxlength="64" value="').concat(esc(client.name), '" aria-label="设备名称"></label></div><button type="button" class="edit-device-name" aria-label="编辑设备名称">').concat(icon("edit"), '</button><button type="button" class="dialog-close" aria-label="关闭">').concat(icon("close"), '</button></header>\n      <label class="device-volume-control"><span>').concat(icon("volume"), '</span><input aria-label="').concat(esc(client.name), '音量" type="range" min="0" max="100" value="').concat(client.volume, '" ').concat(client.connected && active ? "" : "disabled", "><output>").concat(client.volume, '</output></label>\n      <section class="latency-control"><div><span>向右加快 · 向左减慢</span><output>').concat(client.latency, ' ms</output></div><input class="latency-range" aria-label="').concat(esc(client.name), '延迟" type="range" min="-500" max="500" step="10" dir="rtl" value="').concat(Math.max(-500, Math.min(500, client.latency)), '"><footer><button type="button" data-step="10" aria-label="声音减慢">＋</button><button type="button" data-zero aria-label="延迟归零">').concat(icon("reset"), '</button><label><input class="latency-number" type="number" min="-1000" max="5000" step="10" value="').concat(client.latency, '"><span>ms</span></label><button type="button" data-step="-10" aria-label="声音加快">−</button></footer></section>\n      <button class="save-device-name" type="submit" hidden>保存名称</button>\n    </form></dialog>');
+    card.innerHTML = '<button class="speaker-toggle" aria-label="'.concat(esc(client.name)).concat(active ? "关闭" : "激活", '" ').concat(client.connected ? "" : "disabled", '><span class="speaker-visual ').concat(variant, '" aria-hidden="true"><i></i><i></i><i></i></span><strong>').concat(esc(client.name), '</strong><span class="speaker-light" aria-hidden="true"></span></button>\n    <button class="speaker-settings" aria-label="打开 ').concat(esc(client.name), ' 设置">').concat(icon("settings"), '</button>\n    <div class="device-dialog modal" role="dialog" aria-modal="true" aria-label="').concat(esc(client.name), ' 设置"><form class="device-dialog-card">\n      <header><div class="speaker-mini ').concat(variant, '" aria-hidden="true"><i></i></div><div class="device-identity"><span>设备名称</span><strong class="device-name-display">').concat(esc(client.name), '</strong><label hidden><input class="device-name" maxlength="64" value="').concat(esc(client.name), '" aria-label="设备名称"></label></div><button type="button" class="edit-device-name" aria-label="编辑设备名称">').concat(icon("edit"), '</button><button type="button" class="dialog-close" aria-label="关闭">').concat(icon("close"), '</button></header>\n      <label class="device-volume-control"><span>').concat(icon("volume"), '</span><input aria-label="').concat(esc(client.name), '音量" type="range" min="0" max="100" value="').concat(client.volume, '" ').concat(client.connected && active ? "" : "disabled", "><output>").concat(client.volume, '</output></label>\n      <section class="latency-control"><div><span>向右加快 · 向左减慢</span><output>').concat(client.latency, ' ms</output></div><input class="latency-range" aria-label="').concat(esc(client.name), '延迟" type="range" min="-500" max="500" step="10" dir="rtl" value="').concat(Math.max(-500, Math.min(500, client.latency)), '"><footer><button type="button" data-step="10" aria-label="声音减慢">＋</button><button type="button" data-zero aria-label="延迟归零">').concat(icon("reset"), '</button><label><input class="latency-number" type="number" min="-1000" max="5000" step="10" value="').concat(client.latency, '"><span>ms</span></label><button type="button" data-step="-10" aria-label="声音加快">−</button></footer></section>\n      <button class="save-device-name" type="submit" hidden>保存名称</button>\n    </form></div>');
     $(".speaker-toggle", card).onclick = () => mutate("/api/snapcast/client-active", { clientId: client.id, active: !active }, true);
     const dialog = $(".device-dialog", card);
     dialog.addEventListener("close", () => renderZones(true));
@@ -301,7 +311,7 @@
     const receive = (event) => {
       try {
         if (onUpdate) onUpdate(JSON.parse(event.data));
-      } catch {
+      } catch (e) {
         if (onUpdate) onUpdate({});
       }
     };
@@ -852,8 +862,10 @@
   }
   function askPlaylistName(title, value) {
     return new Promise((resolve) => {
-      const dialog = document.createElement("dialog");
+      const dialog = document.createElement("div");
       dialog.className = "modal playlist-name-dialog";
+      dialog.setAttribute("role", "dialog");
+      dialog.setAttribute("aria-modal", "true");
       dialog.innerHTML = '<form class="dialog-card compact-dialog"><h2>'.concat(esc(title), '</h2><label><span>歌单名称</span><input name="playlistName" maxlength="200" value="').concat(esc(value), '" required autocomplete="off"></label><div class="dialog-actions"><button type="button" class="secondary" data-cancel>取消</button><button class="accent-btn">确定</button></div></form>');
       document.body.append(dialog);
       const finish = (result) => {
@@ -889,7 +901,7 @@
       if (!samples.length) return;
       const totals = samples.reduce((sum, index) => [sum[0] + pixels[index], sum[1] + pixels[index + 1], sum[2] + pixels[index + 2]], [0, 0, 0]);
       document.documentElement.style.setProperty("--player-accent", totals.map((value) => Math.round(value / samples.length)).join(" "));
-    } catch {
+    } catch (e) {
     }
   }
 
@@ -897,6 +909,7 @@
   var pollTimer;
   var bootstrapped = false;
   async function start() {
+    if (window.__snapProbe) window.__snapProbe("app-start");
     document.documentElement.dataset.consoleBoot = "starting";
     initEvents();
     await checkAuth();
@@ -904,12 +917,14 @@
   async function checkAuth() {
     try {
       state.auth = await request("/api/auth");
+      if (window.__snapProbe) window.__snapProbe("auth-loaded");
       $("#loginUsername").value = state.auth.username || "admin";
       $("#accountState").textContent = state.auth.enabled ? "已启用认证 · ".concat(state.auth.username || "admin") : "可信家庭 LAN 模式 · 未启用认证";
       $("#logoutButton").hidden = !state.auth.enabled;
       if (state.auth.enabled && (!state.auth.configured || !state.auth.authenticated)) {
         if (!state.auth.configured) $("#loginHint").textContent = "服务端尚未设置 CONTROL_PASSWORD，请先完成部署配置。";
         document.documentElement.dataset.consoleBoot = "auth";
+        if (window.__snapProbe) window.__snapProbe("login-visible");
         openLogin();
         return false;
       }
@@ -918,10 +933,12 @@
       await refreshState();
       await activatePlayer();
       document.documentElement.dataset.consoleBoot = "ready";
+      if (window.__snapProbe) window.__snapProbe("console-ready");
       startPolling();
       return true;
     } catch (error) {
       document.documentElement.dataset.consoleBoot = "failed";
+      if (window.__snapProbe) window.__snapProbe("app-failed");
       toast(error.message, true);
       return false;
     }
@@ -967,7 +984,7 @@
       syncActiveSource(state.sources);
       state.zones = data.zones || data.snapcast && data.snapcast.groups || [];
       state.mainGroup = data.mainGroup || data.snapcast && data.snapcast.mainGroup || null;
-      state.system = { ...state.system, ...data.system || {} };
+      state.system = __spreadValues(__spreadValues({}, state.system), data.system || {});
       state.system.healthy = Boolean(state.system.ok) && !(data.errors && data.errors.length);
       $("#dashboard").setAttribute("aria-busy", "false");
       $("#healthLamp").classList.toggle("ok", state.system.healthy);
@@ -1007,7 +1024,7 @@
     document.addEventListener("state-refresh", refreshState);
     document.addEventListener("click", (event) => {
       const close = event.target.closest("[data-close-dialog]");
-      if (close) closeDialog(close.closest("dialog"));
+      if (close) closeDialog(close.closest('[role="dialog"]'));
     });
     $("#loginForm").onsubmit = login;
     $("#loginDialog").addEventListener("cancel", (event) => event.preventDefault());
@@ -1048,7 +1065,7 @@
   async function logout() {
     try {
       await post("/api/logout", {});
-    } catch {
+    } catch (e) {
     }
     state.auth.authenticated = false;
     bootstrapped = false;

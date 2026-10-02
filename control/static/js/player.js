@@ -311,8 +311,10 @@ function time(seconds) { const n = Math.max(0, Math.floor(Number(seconds) || 0))
 function installArtworkFallback(selector, fallback) { $$(selector, $("#playerContent")).forEach(image => image.addEventListener("error", () => { if (!image.src.endsWith(fallback)) image.src = fallback; }, { once: true })); }
 function askPlaylistName(title, value) {
   return new Promise(resolve => {
-    const dialog = document.createElement("dialog");
+    const dialog = document.createElement("div");
     dialog.className = "modal playlist-name-dialog";
+    dialog.setAttribute("role", "dialog");
+    dialog.setAttribute("aria-modal", "true");
     dialog.innerHTML = `<form class="dialog-card compact-dialog"><h2>${esc(title)}</h2><label><span>歌单名称</span><input name="playlistName" maxlength="200" value="${esc(value)}" required autocomplete="off"></label><div class="dialog-actions"><button type="button" class="secondary" data-cancel>取消</button><button class="accent-btn">确定</button></div></form>`;
     document.body.append(dialog);
     const finish = result => { closeDialog(dialog); dialog.remove(); resolve(result); };

@@ -8,6 +8,7 @@ let pollTimer;
 let bootstrapped = false;
 
 async function start() {
+  if (window.__snapProbe) window.__snapProbe("app-start");
   document.documentElement.dataset.consoleBoot = "starting";
   initEvents();
   await checkAuth();
@@ -16,12 +17,14 @@ async function start() {
 async function checkAuth() {
   try {
     state.auth = await request("/api/auth");
+    if (window.__snapProbe) window.__snapProbe("auth-loaded");
     $("#loginUsername").value = state.auth.username || "admin";
     $("#accountState").textContent = state.auth.enabled ? `已启用认证 · ${state.auth.username || "admin"}` : "可信家庭 LAN 模式 · 未启用认证";
     $("#logoutButton").hidden = !state.auth.enabled;
     if (state.auth.enabled && (!state.auth.configured || !state.auth.authenticated)) {
       if (!state.auth.configured) $("#loginHint").textContent = "服务端尚未设置 CONTROL_PASSWORD，请先完成部署配置。";
       document.documentElement.dataset.consoleBoot = "auth";
+      if (window.__snapProbe) window.__snapProbe("login-visible");
       openLogin();
       return false;
     }
@@ -30,10 +33,12 @@ async function checkAuth() {
     await refreshState();
     await activatePlayer();
     document.documentElement.dataset.consoleBoot = "ready";
+    if (window.__snapProbe) window.__snapProbe("console-ready");
     startPolling();
     return true;
   } catch (error) {
     document.documentElement.dataset.consoleBoot = "failed";
+    if (window.__snapProbe) window.__snapProbe("app-failed");
     toast(error.message, true);
     return false;
   }
@@ -125,7 +130,7 @@ function initEvents() {
   document.addEventListener("state-refresh", refreshState);
   document.addEventListener("click", event => {
     const close = event.target.closest("[data-close-dialog]");
-    if (close) closeDialog(close.closest("dialog"));
+    if (close) closeDialog(close.closest('[role="dialog"]'));
   });
   $("#loginForm").onsubmit = login;
   $("#loginDialog").addEventListener("cancel", event => event.preventDefault());
