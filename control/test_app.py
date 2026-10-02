@@ -533,6 +533,17 @@ class ProductionConfigTest(unittest.TestCase):
         self.assertNotIn("<dialog", index)
         self.assertIn('id="loginDialog" class="modal" role="dialog" aria-modal="true" open', index)
 
+    def test_legacy_safari_dialog_position_and_viewport_fallbacks(self):
+        static = Path(__file__).parent / "static"
+        components = (static / "styles" / "components.css").read_text(encoding="utf-8")
+        responsive = (static / "styles" / "responsive.css").read_text(encoding="utf-8")
+        modal_rule = components.split(".modal[open]", 1)[1].split("}", 1)[0]
+        for edge in ("top: 0", "right: 0", "bottom: 0", "left: 0"):
+            self.assertIn(edge, modal_rule)
+        self.assertNotIn("inset:", modal_rule)
+        self.assertIn("max-height: calc(100vh - 48px)", components)
+        self.assertIn("max-height: calc(100vh - 24px)", responsive)
+
     def test_frontend_has_complete_device_states_and_user_facing_copy(self):
         static = Path(__file__).parent / "static"
         sources = "\n".join(path.read_text(encoding="utf-8") for path in (

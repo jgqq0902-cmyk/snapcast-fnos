@@ -5,8 +5,8 @@
   .console-brand { display: flex; padding: 0; font-size: 18px; }
   .dashboard { grid-template-columns: 1fr; }
   .modal { padding: 12px; }
-  .dialog-card { max-height: calc(100dvh - 24px); padding: 20px 16px; border-radius: 20px; }
-  .compact-dialog, .login-card { margin-top: 10dvh; }
+  .dialog-card { max-height: calc(100vh - 24px); max-height: calc(100dvh - 24px); padding: 20px 16px; border-radius: 20px; }
+  .compact-dialog, .login-card { margin-top: 10vh; margin-top: 10dvh; }
   .player-toolbar { height: 44px; padding: 2px 8px; }
 }
 
@@ -24,7 +24,7 @@
 
 .thumb-only-range { min-width: 0; }
 .thumb-only-handle { display: none; }
-.device-dialog-card { max-height: calc(100svh - 24px); overflow-y: auto; overscroll-behavior: contain; }
+.device-dialog-card { max-height: calc(100vh - 24px); max-height: calc(100svh - 24px); overflow-y: auto; overscroll-behavior: contain; }
 .player-track-copy p, .player-timeline > div { color: rgb(255 255 255 / .72); }
 @media (max-width: 700px) and (pointer: coarse) {
   .thumb-only-range { position: relative; display: block; width: 100%; }
